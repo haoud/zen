@@ -1,0 +1,18 @@
+[package]
+name = "zen"
+version = "0.1.0"
+edition = "2021"
+authors = ["Romain Cadilhac"]
+description = "A simple and relaxing programming language"
+
+[dependencies]
+inkwell = { git = "https://github.com/TheDan64/inkwell", features = ["llvm18-0"] }
+chumsky = { git = "https://github.com/zesterer/chumsky" }
+ariadne = { version = "0.4.1", features = [] }
+clap = { version = "4.5.4", features = ["cargo"] }
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+strip = true
+lto = true
