@@ -1,9 +1,3 @@
-//! TODO:
-//!  - Improve the code, reduce the number of unwraps
-//!  - Comment the code
-//!  - Unit testings
-//!  - Release the first git version ^_^
-
 use chumsky::prelude::*;
 use clap::{arg, command};
 use codegen::c::compiler::Compiler;
@@ -116,7 +110,7 @@ fn build(build: &clap::ArgMatches) {
     }
 
     let (ast, parse_errors) = if let Some(tokens) = &tokens {
-        let (ast, parser_errors) = parser::expr_parser()
+        let (ast, parser_errors) = parser::multi_expr_parser()
             .map_with(|ast, errors| (ast, errors.span()))
             .parse(tokens.as_slice().spanned((input.len()..input.len()).into()))
             .into_output_errors();
@@ -166,15 +160,35 @@ fn build(build: &clap::ArgMatches) {
     // and don't continue to the semantic analysis and code generation
     // phases because it doesn't make sense to do so: the AST generated
     // is not correct and we can't generate code from it.
-    if let Some((expr, _)) = ast {
+    if let Some((exprs, _)) = ast {
+        // Perform the semantic analysis on the AST.
+        if let Err(sematic_errors) = semantic::check(&exprs) {
+            sematic_errors.into_iter().for_each(|error| {
+                let start = error.span.start;
+                let end = error.span.end;
+                let range = start..end;
+                ariadne::Report::build(ariadne::ReportKind::Error, path, start)
+                    .with_label(
+                        ariadne::Label::new((path, range))
+                            .with_color(ariadne::Color::Red),
+                    )
+                    .with_message(error.msg)
+                    .with_code(0)
+                    .finish()
+                    .eprint((path, ariadne::Source::from(input.clone())))
+                    .unwrap();
+            });
+            return;
+        }
+
         if build.get_flag("llvm-backend") {
-            let code = codegen::llvm::build(&expr, output);
+            let code = codegen::llvm::build(&exprs, output);
             if build.get_flag("dump-ir") {
                 println!("Intermediate LLVM Representation:");
                 println!("{}", code);
             }
         } else {
-            let code = codegen::c::generate(&expr);
+            let code = codegen::c::generate(&exprs);
             if build.get_flag("dump-ir") {
                 println!("Intermediate C Representation:");
                 println!("{}", code);

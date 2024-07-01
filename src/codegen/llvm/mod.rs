@@ -4,9 +4,9 @@ use inkwell::{
     context::Context,
     module::Module,
     targets::{InitializationConfig, Target, TargetMachine},
-    values::{FunctionValue, IntValue},
+    values::{FunctionValue, IntValue, PointerValue},
 };
-use std::{io::Write, path::Path};
+use std::{collections::HashMap, io::Write, path::Path};
 
 /// Represents the LLVM code generator for the language. It contains
 /// the LLVM context, builder, and module in which we are working.
@@ -20,6 +20,9 @@ pub struct Compiler<'a, 'ctx> {
 
     /// The LLVM module in which we are working
     pub module: &'a Module<'ctx>,
+
+    /// The variable in the current scope
+    pub variables: HashMap<&'a str, PointerValue<'ctx>>,
 }
 
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
@@ -32,6 +35,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         module: &'a Module<'ctx>,
     ) -> Self {
         Self {
+            variables: HashMap::new(),
             context,
             builder,
             module,
@@ -44,15 +48,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     /// we have a proper language with functions and expressions.
     pub fn generate_fn(
         &mut self,
-        expr: &ast::Expr,
+        exprs: &'a [ast::Expr<'a>],
     ) -> Result<FunctionValue, String> {
         let prototype = self.dummy_prototype()?;
 
         let entry = self.context.append_basic_block(prototype, "entry");
         self.builder.position_at_end(entry);
 
-        let body = self.generate_expr(expr)?;
-        self.builder.build_return(Some(&body)).unwrap();
+        // Build all expressions in the function.
+        for expr in exprs {
+            self.generate_expr(expr)?;
+        }
+
         Ok(prototype)
     }
 
@@ -68,7 +75,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     /// Generates the LLVM IR for the given expression
     fn generate_expr(
         &mut self,
-        expr: &ast::Expr,
+        expr: &'a ast::Expr<'a>,
     ) -> Result<IntValue<'ctx>, String> {
         match &expr.kind {
             ast::ExprKind::Literal(n) => {
@@ -109,6 +116,38 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         .unwrap()),
                 }
             }
+            ast::ExprKind::Identifier(ident) => {
+                let var = self.variables.get(ident).unwrap();
+                Ok(self
+                    .builder
+                    .build_load(self.context.i32_type(), *var, &ident)
+                    .expect("Failed to load variable")
+                    .into_int_value())
+            }
+            ast::ExprKind::Let(ident, expr) => {
+                let ident = ident.kind.as_identifier().unwrap();
+                let value = self.generate_expr(expr)?;
+
+                // Create an alloca instruction for the variable
+                let alloca = self
+                    .builder
+                    .build_alloca(self.context.i32_type(), &ident)
+                    .expect("Failed to create alloca");
+
+                // Store the value in the alloca instruction
+                self.builder
+                    .build_store(alloca, value)
+                    .expect("Failed to store value");
+
+                // Add the variable to the current scope
+                self.variables.insert(ident, alloca);
+                Ok(value)
+            }
+            ast::ExprKind::Return(expr) => {
+                let value = self.generate_expr(expr)?;
+                let _ = self.builder.build_return(Some(&value));
+                Ok(value)
+            }
             ast::ExprKind::Error(..) => unreachable!(),
         }
     }
@@ -117,7 +156,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 /// Build the given AST expression and write the generated LLVM IR to the
 /// given output file. The function returns the generated LLVM IR as a string
 /// for debugging purposes.
-pub fn build<'src>(ast: &ast::Expr, output: &'src str) -> String {
+pub fn build<'src>(exprs: &[ast::Expr], output: &'src str) -> String {
     Target::initialize_x86(&InitializationConfig::default());
 
     // Get the current target triple and create a target machine
@@ -147,7 +186,7 @@ pub fn build<'src>(ast: &ast::Expr, output: &'src str) -> String {
 
     // Compile the expression
     let mut compiler = Compiler::new(&context, &builder, &module);
-    let _function = compiler.generate_fn(ast).unwrap();
+    let _ = compiler.generate_fn(exprs).unwrap();
 
     // Create an temporary object file name from the output file
     // name to write the object file to disk.
@@ -174,7 +213,6 @@ pub fn build<'src>(ast: &ast::Expr, output: &'src str) -> String {
     // single expression and returns it.
     let main = "
         #include <stdio.h>
-        #include <stdlib.h>
 
         extern int dummy();
 

@@ -15,17 +15,60 @@ type ParserInput<'tokens, 'src> = chumsky::input::SpannedInput<
     &'tokens [(Token<'src>, Span)],
 >;
 
+/// Parses a sequence of expressions. Temporary function to test the parser.
+pub fn multi_expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
+    'tokens,
+    ParserInput<'tokens, 'src>,
+    Vec<ast::Expr<'src>>,
+    extra::Err<Rich<'tokens, Token<'src>, Span>>,
+> + Clone {
+    expr_parser().repeated().collect::<Vec<_>>()
+}
+
 /// Parses an expression.
 pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
     'tokens,
     ParserInput<'tokens, 'src>,
-    ast::Expr,
+    ast::Expr<'src>,
     extra::Err<Rich<'tokens, Token<'src>, Span>>,
 > + Clone {
     recursive(|expr| {
+        // Parse a number literal.
         let value = select! {
             Token::Number(n) => n,
         };
+
+        // Parse an identifier, which is a sequence of letters.
+        let ident = select! {
+            Token::Identifier(ident) => ast::ExprKind::Identifier(ident),
+        }
+        .map_with(|ident, e| ast::Expr {
+            kind: ident,
+            span: e.span(),
+        });
+
+        // Parse a `return` statement, which is an expression of the form
+        // `return <expr>;`. It returns the result of the expression.
+        let return_expr = just(Token::Keyword("return"))
+            .ignore_then(expr.clone())
+            .then_ignore(just(Token::Delimiter(";")))
+            .map_with(|expr, e| ast::Expr {
+                kind: ast::ExprKind::Return(Box::new(expr)),
+                span: e.span(),
+            });
+
+        // Parse a `let` binding, which is an expression of the form
+        // `let <ident> := <expr>;`. It binds the result of the expression
+        // to the identifier `<ident>`.
+        let let_binding = just(Token::Keyword("let"))
+            .ignore_then(ident)
+            .then_ignore(just(Token::Operator(":=")))
+            .then(expr.clone())
+            .then_ignore(just(Token::Delimiter(";")))
+            .map_with(|(ident, expr), e| ast::Expr {
+                kind: ast::ExprKind::Let(Box::new(ident), Box::new(expr)),
+                span: e.span(),
+            });
 
         // `Atoms` are expressions that can't be broken down further
         // and are the base case of the recursive parser. They can be
@@ -35,6 +78,9 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
                 kind: ast::ExprKind::Literal(value),
                 span: e.span(),
             })
+            .or(ident)
+            .or(let_binding)
+            .or(return_expr)
             .or(expr.clone().delimited_by(
                 just(Token::Delimiter("(")),
                 just(Token::Delimiter(")")),

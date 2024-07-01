@@ -24,6 +24,20 @@ use chumsky::prelude::*;
 /// them to the parser.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token<'a> {
+    /// A keyword is a special identifier that has a predefined
+    /// meaning in the language. Keywords are reserved and cannot
+    /// be used as identifiers. For example, `if`, `else`, `while`,
+    /// `for`, `return` are all keywords in most programming languages.
+    Keyword(&'a str),
+
+    /// An identifier is a sequence of characters that represents
+    /// a name in the language. Identifiers are used to name variables,
+    /// functions, classes, etc. For example, `x`, `y`, `foo`, `bar`
+    /// are all valid identifiers. Identifiers can contain letters,
+    /// digits, and underscores, but they cannot start with a digit to
+    /// avoid ambiguity with number literals.
+    Identifier(&'a str),
+
     /// An operator is a special combination of characters that
     /// represents an operation in the language. For example, `+`
     /// is an operator that represents an addition operation, and
@@ -46,8 +60,10 @@ pub enum Token<'a> {
 impl core::fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
+            Token::Identifier(ident) => write!(f, "{}", ident),
             Token::Delimiter(delim) => write!(f, "{}", delim),
             Token::Operator(op) => write!(f, "{}", op),
+            Token::Keyword(kw) => write!(f, "{}", kw),
             Token::Number(num) => write!(f, "{}", num),
         }
     }
@@ -61,6 +77,12 @@ impl core::fmt::Display for Token<'_> {
 pub fn lexer<'a>(
 ) -> impl Parser<'a, &'a str, Vec<(Token<'a>, Span)>, extra::Err<Rich<'a, char, Span>>>
 {
+    // A lexer for parsing keywords
+    let keyword = choice((just("let"), just("return"))).map(Token::Keyword);
+
+    // A lexer for parsing C-style identifiers
+    let ident = text::ascii::ident().map(Token::Identifier);
+
     // A simpler parser for integers that supports different
     // common bases for integers (e.g. 0x for hexadecimal, 0b
     // for binary...)
@@ -78,11 +100,6 @@ pub fn lexer<'a>(
     ))
     .map(Token::Number);
 
-    // A lexer for delimiters.
-    let delimiter = choice((just("("), just(")")))
-        .to_slice()
-        .map(Token::Delimiter);
-
     // A parser for operators. Operators are special combinations of
     // one or more characters that represent an operation in the language.
     // For example, `+` is an operator that represents an addition operation,
@@ -94,17 +111,23 @@ pub fn lexer<'a>(
     // surrounding tokens when parsing operators. This will not be covered
     // in the lexer, but will be handled in the parser.
     let operator = choice((
-        just("+"), // Addition
-        just("-"), // Subtraction
-        just("*"), // Multiplication
-        just("/"), // Division
-        just("%"), // Modulo
+        just(":="), // Infer type and set variable
+        just("+"),  // Addition
+        just("-"),  // Subtraction
+        just("*"),  // Multiplication
+        just("/"),  // Division
+        just("%"),  // Modulo
     ))
     .to_slice()
     .map(Token::Operator);
 
+    // A lexer for delimiters.
+    let delimiter = choice((just("("), just(")"), just(":"), just(";")))
+        .to_slice()
+        .map(Token::Delimiter);
+
     // A single token can be one of the above
-    let token = choice((number, delimiter, operator));
+    let token = choice((keyword, ident, operator, delimiter, number));
 
     // A parser for comments. Comments start with `//` and end
     // with a newline character. Comments are ignored by the
