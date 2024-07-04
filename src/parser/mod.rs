@@ -15,14 +15,57 @@ type ParserInput<'tokens, 'src> = chumsky::input::SpannedInput<
     &'tokens [(Token<'src>, Span)],
 >;
 
-/// Parses a sequence of expressions. Temporary function to test the parser.
-pub fn multi_expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
+/// Parses a module, which is simply a list of functions (for now).
+pub fn parse_module<'tokens, 'src: 'tokens>() -> impl Parser<
     'tokens,
     ParserInput<'tokens, 'src>,
-    Vec<ast::Expr<'src>>,
+    Vec<ast::Function<'src>>,
     extra::Err<Rich<'tokens, Token<'src>, Span>>,
 > + Clone {
-    expr_parser().repeated().collect::<Vec<_>>()
+    parse_fn().repeated().collect()
+}
+
+/// Parses a function definition.
+pub fn parse_fn<'tokens, 'src: 'tokens>() -> impl Parser<
+    'tokens,
+    ParserInput<'tokens, 'src>,
+    ast::Function<'src>,
+    extra::Err<Rich<'tokens, Token<'src>, Span>>,
+> + Clone {
+    let ident = select! {
+        Token::Identifier(ident) => ident,
+    };
+
+    let arg = ident
+        .clone()
+        .then_ignore(just(Token::Delimiter(":")))
+        .then(just(Token::Identifier("int")).map(|_| lang::types::Type::Int))
+        .map_with(|(name, ty), e| ast::Parameter {
+            name,
+            ty,
+            span: e.span(),
+        });
+
+    just(Token::Keyword("fn"))
+        .ignore_then(ident.clone())
+        .then(arg.repeated().collect().delimited_by(
+            just(Token::Delimiter("(")),
+            just(Token::Delimiter(")")),
+        ))
+        .then(just(Token::Operator("->")).ignore_then(
+            just(Token::Identifier("int")).map(|_| lang::types::Type::Int),
+        ))
+        .then(expr_parser().repeated().collect().delimited_by(
+            just(Token::Delimiter("{")),
+            just(Token::Delimiter("}")),
+        ))
+        .map_with(|(((name, args), ret), body), e| ast::Function {
+            name,
+            args,
+            body,
+            ret,
+            span: e.span(),
+        })
 }
 
 /// Parses an expression.
@@ -46,6 +89,13 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             kind: ident,
             span: e.span(),
         });
+
+        // A list of expressions separated by commas. This is used for
+        // function arguments.
+        let items = expr
+            .clone()
+            .separated_by(just(Token::Delimiter(",")))
+            .collect();
 
         // Parse a `return` statement, which is an expression of the form
         // `return <expr>;`. It returns the result of the expression.
@@ -87,11 +137,25 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             ))
             .boxed();
 
+        // Function call has very high precedence, so it is parsed first.
+        let call = atom.foldl_with(
+            items
+                .delimited_by(
+                    just(Token::Delimiter("(")),
+                    just(Token::Delimiter(")")),
+                )
+                .repeated(),
+            |func, args, e| ast::Expr {
+                kind: ast::ExprKind::Call(Box::new(func), args),
+                span: e.span(),
+            },
+        );
+
         // Product operators: multiplication (`*`), division (`/`)
         // and remainder (`%`). They have higher precedence than sum
         // operators, thus they are parsed first.
-        let product = atom.clone().foldl_with(
-            product_ops().then(atom).repeated(),
+        let product = call.clone().foldl_with(
+            product_ops().then(call).repeated(),
             |lhs, (op, rhs), e| ast::Expr {
                 kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
                 span: e.span(),

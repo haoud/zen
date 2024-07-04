@@ -1,4 +1,5 @@
 pub mod operator;
+pub mod types;
 
 /// A simple span type that uses `usize` to represent the start
 /// and end of a span.

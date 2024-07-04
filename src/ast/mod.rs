@@ -1,4 +1,39 @@
-use crate::lang::{self, Span};
+use crate::lang::{self, types::Type, Span};
+
+/// A function. Functions are the main building blocks of the language.
+/// They can be called from other functions or from the entry point of
+/// the program. Functions can have a return type and a body that contains
+/// a list of expressions that are evaluated when the function is called.
+#[derive(Debug, Clone)]
+pub struct Function<'src> {
+    /// The name of the function.
+    pub name: &'src str,
+
+    /// A list of parameters that the function takes.
+    pub args: Vec<Parameter<'src>>,
+
+    /// A list of expressions that make up the body of the function.
+    pub body: Vec<Expr<'src>>,
+
+    /// The return type of the function.
+    pub ret: Type,
+
+    /// The span of the function.
+    pub span: Span,
+}
+
+/// A function parameter. Parameters are used to pass values to functions.
+#[derive(Debug, Clone)]
+pub struct Parameter<'src> {
+    /// The name of the parameter.
+    pub name: &'src str,
+
+    /// The type of the parameter.
+    pub ty: Type,
+
+    /// The span of the parameter.
+    pub span: Span,
+}
 
 /// An expression. Expressions are evaluated to produce a value that
 /// can be used in other expressions or statements. Expressions that
@@ -15,6 +50,11 @@ pub struct Expr<'src> {
 /// Different kinds of expressions supported by the language.
 #[derive(Debug, Clone)]
 pub enum ExprKind<'src> {
+    /// A function call expression. The first element is the function
+    /// that is called, and the second element is a list of arguments
+    /// that are passed to the function.
+    Call(Box<Expr<'src>>, Vec<Expr<'src>>),
+
     /// A literal value expression.
     Literal(u64),
 

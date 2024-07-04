@@ -1,0 +1,7 @@
+pub fn main() -> int {
+    return add_five(10);
+}
+
+fn add_five(x: int) -> int {
+    return x + 5;
+}

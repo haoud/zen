@@ -14,6 +14,11 @@ pub trait Compiler {
     /// file. If the compilation fails, the function will panic.
     fn build(&self, src: &str, output: &str);
 
+    /// Get the major version of the compiler. This is useful to check
+    /// if the compiler supports certain features or if it has bugs that
+    /// we need to work around.
+    fn major(&self) -> u32;
+
     /// Check if the compiler exists in the system
     fn exists(&self) -> bool;
 }
@@ -22,7 +27,6 @@ pub trait Compiler {
 pub struct Clang;
 
 impl Clang {
-    /// Create a new instance of the Clang compiler
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -37,6 +41,37 @@ impl Compiler for Clang {
             .arg("--version")
             .output();
         clang.is_ok()
+    }
+
+    // Get the major version of the clang compiler
+    #[must_use]
+    fn major(&self) -> u32 {
+        let clang = std::process::Command::new("clang")
+            .arg("--version")
+            .output()
+            .expect("Failed to get clang version");
+
+        let output = String::from_utf8(clang.stdout)
+            .expect("Failed to parse clang output");
+
+        let version = output
+            .lines()
+            .next()
+            .expect("Failed to get clang version line");
+
+        let version = version
+            .split_whitespace()
+            .nth(2)
+            .expect("Failed to get clang version number");
+
+        let version = version
+            .split('.')
+            .next()
+            .expect("Failed to get clang major version");
+
+        version
+            .parse()
+            .expect("Failed to parse clang major version")
     }
 
     /// Compile the source code using clang and write the output to the

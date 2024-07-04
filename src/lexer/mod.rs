@@ -78,7 +78,8 @@ pub fn lexer<'a>(
 ) -> impl Parser<'a, &'a str, Vec<(Token<'a>, Span)>, extra::Err<Rich<'a, char, Span>>>
 {
     // A lexer for parsing keywords
-    let keyword = choice((just("let"), just("return"))).map(Token::Keyword);
+    let keyword =
+        choice((just("return"), just("let"), just("fn"))).map(Token::Keyword);
 
     // A lexer for parsing C-style identifiers
     let ident = text::ascii::ident().map(Token::Identifier);
@@ -112,6 +113,7 @@ pub fn lexer<'a>(
     // in the lexer, but will be handled in the parser.
     let operator = choice((
         just(":="), // Infer type and set variable
+        just("->"), // Arrow operator
         just("+"),  // Addition
         just("-"),  // Subtraction
         just("*"),  // Multiplication
@@ -122,9 +124,17 @@ pub fn lexer<'a>(
     .map(Token::Operator);
 
     // A lexer for delimiters.
-    let delimiter = choice((just("("), just(")"), just(":"), just(";")))
-        .to_slice()
-        .map(Token::Delimiter);
+    let delimiter = choice((
+        just("("),
+        just(")"),
+        just(":"),
+        just(";"),
+        just("{"),
+        just("}"),
+        just(","),
+    ))
+    .to_slice()
+    .map(Token::Delimiter);
 
     // A single token can be one of the above
     let token = choice((keyword, ident, operator, delimiter, number));

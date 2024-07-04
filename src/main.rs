@@ -10,6 +10,14 @@ pub mod lexer;
 pub mod parser;
 pub mod semantic;
 
+/// TODO:
+/// - Code generation (LLVM):
+///     - Generate all function prototypes at the beginning of the file
+///       to avoid having to declare them before they are used.
+///
+/// - Code cleanup:
+///     - Update comments
+
 /// The main entry point of the compiler. It parses the command line
 /// arguments and dispatches the appropriate action. The compiler use
 /// the `clap` crate to parse the command line arguments, and I can
@@ -110,7 +118,7 @@ fn build(build: &clap::ArgMatches) {
     }
 
     let (ast, parse_errors) = if let Some(tokens) = &tokens {
-        let (ast, parser_errors) = parser::multi_expr_parser()
+        let (ast, parser_errors) = parser::parse_module()
             .map_with(|ast, errors| (ast, errors.span()))
             .parse(tokens.as_slice().spanned((input.len()..input.len()).into()))
             .into_output_errors();
@@ -160,9 +168,9 @@ fn build(build: &clap::ArgMatches) {
     // and don't continue to the semantic analysis and code generation
     // phases because it doesn't make sense to do so: the AST generated
     // is not correct and we can't generate code from it.
-    if let Some((exprs, _)) = ast {
+    if let Some((funcs, _)) = ast {
         // Perform the semantic analysis on the AST.
-        if let Err(sematic_errors) = semantic::check(&exprs) {
+        if let Err(sematic_errors) = semantic::analyze(&funcs) {
             sematic_errors.into_iter().for_each(|error| {
                 let start = error.span.start;
                 let end = error.span.end;
@@ -182,13 +190,13 @@ fn build(build: &clap::ArgMatches) {
         }
 
         if build.get_flag("llvm-backend") {
-            let code = codegen::llvm::build(&exprs, output);
+            let code = codegen::llvm::build(&funcs, output);
             if build.get_flag("dump-ir") {
                 println!("Intermediate LLVM Representation:");
                 println!("{}", code);
             }
         } else {
-            let code = codegen::c::generate(&exprs);
+            let code = codegen::c::generate(&funcs);
             if build.get_flag("dump-ir") {
                 println!("Intermediate C Representation:");
                 println!("{}", code);

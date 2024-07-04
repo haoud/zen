@@ -4,9 +4,69 @@ use inkwell::{
     context::Context,
     module::Module,
     targets::{InitializationConfig, Target, TargetMachine},
-    values::{FunctionValue, IntValue, PointerValue},
+    types::BasicMetadataTypeEnum,
+    values::{BasicMetadataValueEnum, FunctionValue, IntValue, PointerValue},
 };
 use std::{collections::HashMap, io::Write, path::Path};
+
+/// A scope represents a stack of variable scopes in which we can
+/// store and retrieve variables. Each scope contains a map of
+/// variable names to their corresponding LLVM pointers as well as
+/// the current function in which we are working.
+#[derive(Debug)]
+pub struct Scope<'ctx> {
+    /// A stack of variable scopes. Each scope is a map of variable
+    /// names to their corresponding LLVM pointers. The scope are
+    /// implemented as a stack to allow for nested scopes.
+    variables: Vec<HashMap<String, PointerValue<'ctx>>>,
+
+    /// The current function in which we are working. Zen does not
+    /// support nested functions, so we only need to keep track of
+    /// the current function.
+    function: Option<FunctionValue<'ctx>>,
+}
+
+impl<'ctx> Scope<'ctx> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            variables: Vec::new(),
+            function: None,
+        }
+    }
+
+    /// Get a variable accessible in the current scope. If no variable
+    /// with the given name is found, return `None`.
+    #[must_use]
+    pub fn get_variable(&self, name: &str) -> Option<PointerValue<'ctx>> {
+        for scope in self.variables.iter().rev() {
+            if let Some(var) = scope.get(name) {
+                return Some(*var);
+            }
+        }
+        None
+    }
+
+    /// Inserts a variable in the current scope. If the variable already
+    /// exists, it will be overwritten.
+    pub fn insert_variable(&mut self, name: &str, var: PointerValue<'ctx>) {
+        self.variables
+            .last_mut()
+            .unwrap()
+            .insert(name.to_string(), var);
+    }
+
+    /// Creates a new scope with an empty variable stack
+    pub fn start_scope(&mut self) {
+        self.variables.push(HashMap::new());
+    }
+
+    /// Ends the current scope by popping the last variable scope
+    /// from the stack.
+    pub fn end_scope(&mut self) {
+        self.variables.pop();
+    }
+}
 
 /// Represents the LLVM code generator for the language. It contains
 /// the LLVM context, builder, and module in which we are working.
@@ -22,7 +82,7 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
 
     /// The variable in the current scope
-    pub variables: HashMap<&'a str, PointerValue<'ctx>>,
+    pub scope: Scope<'ctx>,
 }
 
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
@@ -35,11 +95,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         module: &'a Module<'ctx>,
     ) -> Self {
         Self {
-            variables: HashMap::new(),
+            scope: Scope::new(),
             context,
             builder,
             module,
         }
+    }
+
+    /// Returns the function with the given name if it exists in the module.
+    #[must_use]
+    pub fn get_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
+        self.module.get_function(name)
     }
 
     /// Generates a function that computes the given expression and returns
@@ -48,36 +114,79 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     /// we have a proper language with functions and expressions.
     pub fn generate_fn(
         &mut self,
-        exprs: &'a [ast::Expr<'a>],
+        func: &'a ast::Function,
     ) -> Result<FunctionValue, String> {
-        let prototype = self.dummy_prototype()?;
+        self.scope.start_scope();
+        let args_types = func
+            .args
+            .iter()
+            .map(|_| self.context.i32_type().into())
+            .collect::<Vec<BasicMetadataTypeEnum>>();
+
+        let header = self.context.i32_type().fn_type(&args_types, false);
+        let prototype = self.module.add_function(&func.name, header, None);
 
         let entry = self.context.append_basic_block(prototype, "entry");
         self.builder.position_at_end(entry);
 
-        // Build all expressions in the function.
-        for expr in exprs {
+        // For each argument in the function, create an alloca instruction
+        // at the beginning of the function and store the argument in it.
+        for (arg, param) in func.args.iter().zip(prototype.get_param_iter()) {
+            let alloca = self
+                .builder
+                .build_alloca(self.context.i32_type(), &arg.name)
+                .expect("Failed to create alloca");
+
+            self.builder.build_store(alloca, param).unwrap();
+            self.scope.insert_variable(&arg.name, alloca);
+        }
+
+        // Build all expressions in the function.dummy
+        for expr in &func.body {
             self.generate_expr(expr)?;
         }
 
+        self.scope.end_scope();
         Ok(prototype)
     }
 
-    /// Generates a dummy prototype function that takes no arguments and
-    /// returns an integer. This is a temporary function to test the LLVM
-    /// code generation until we have a proper language with functions and
-    /// expressions.
-    fn dummy_prototype(&mut self) -> Result<FunctionValue<'ctx>, String> {
-        let prototype = self.context.i32_type().fn_type(&[], false);
-        Ok(self.module.add_function("dummy", prototype, None))
-    }
-
-    /// Generates the LLVM IR for the given expression
+    /// Generates the LLVM IR for the given expression. This function assumes
+    /// that a semantic analysis has been performed and that the expression is
+    /// valid. The function returns the resulting LLVM value of the expression.
     fn generate_expr(
         &mut self,
         expr: &'a ast::Expr<'a>,
     ) -> Result<IntValue<'ctx>, String> {
         match &expr.kind {
+            ast::ExprKind::Call(func, args) => {
+                // Get the function from the module that we want to call
+                let function = self
+                    .get_function(func.kind.as_identifier().unwrap())
+                    .ok_or("Function not found")?;
+
+                // Evaluate all arguments (from left to right) that we
+                // want to pass to the function.
+                let args = args
+                    .iter()
+                    .map(|arg| self.generate_expr(arg).map(|arg| arg.into()))
+                    .collect::<Result<Vec<BasicMetadataValueEnum>, String>>()?;
+
+                // Build the call instruction
+                let call = self
+                    .builder
+                    .build_call(function, &args, "tmpcall")
+                    .unwrap();
+
+                // Get the return value of the function call. For now, we
+                // assume that the function returns an integer value.
+                let ret = call
+                    .try_as_basic_value()
+                    .left()
+                    .expect("Failed to get function return value")
+                    .into_int_value();
+
+                Ok(ret)
+            }
             ast::ExprKind::Literal(n) => {
                 Ok(self.context.i32_type().const_int(*n as u64, false))
             }
@@ -117,10 +226,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
             }
             ast::ExprKind::Identifier(ident) => {
-                let var = self.variables.get(ident).unwrap();
+                // Get the variable from the current scope
+                let var = self
+                    .scope
+                    .get_variable(ident)
+                    .ok_or("Variable not found")?;
+
+                // Load the value from the variable
                 Ok(self
                     .builder
-                    .build_load(self.context.i32_type(), *var, &ident)
+                    .build_load(self.context.i32_type(), var, &ident)
                     .expect("Failed to load variable")
                     .into_int_value())
             }
@@ -140,12 +255,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .expect("Failed to store value");
 
                 // Add the variable to the current scope
-                self.variables.insert(ident, alloca);
+                self.scope.insert_variable(&ident, alloca);
                 Ok(value)
             }
             ast::ExprKind::Return(expr) => {
                 let value = self.generate_expr(expr)?;
-                let _ = self.builder.build_return(Some(&value));
+                self.builder.build_return(Some(&value)).unwrap();
                 Ok(value)
             }
             ast::ExprKind::Error(..) => unreachable!(),
@@ -156,7 +271,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 /// Build the given AST expression and write the generated LLVM IR to the
 /// given output file. The function returns the generated LLVM IR as a string
 /// for debugging purposes.
-pub fn build<'src>(exprs: &[ast::Expr], output: &'src str) -> String {
+pub fn build<'src>(funcs: &[ast::Function], output: &'src str) -> String {
     Target::initialize_x86(&InitializationConfig::default());
 
     // Get the current target triple and create a target machine
@@ -175,7 +290,6 @@ pub fn build<'src>(exprs: &[ast::Expr], output: &'src str) -> String {
     .expect("Failed to create LLVM target machine");
 
     let target_data = target_machine.get_target_data();
-
     let context = inkwell::context::Context::create();
     let module = context.create_module("main");
     let builder = context.create_builder();
@@ -184,9 +298,11 @@ pub fn build<'src>(exprs: &[ast::Expr], output: &'src str) -> String {
     module.set_data_layout(&target_data.get_data_layout());
     module.set_triple(&target_triple);
 
-    // Compile the expression
+    // Compile functions
     let mut compiler = Compiler::new(&context, &builder, &module);
-    let _ = compiler.generate_fn(exprs).unwrap();
+    for func in funcs {
+        let _ = compiler.generate_fn(&func).unwrap();
+    }
 
     // Create an temporary object file name from the output file
     // name to write the object file to disk.
@@ -214,10 +330,10 @@ pub fn build<'src>(exprs: &[ast::Expr], output: &'src str) -> String {
     let main = "
         #include <stdio.h>
 
-        extern int dummy();
+        extern int compute();
 
         int main() {
-            printf(\"%d\\n\", dummy());
+            printf(\"%d\\n\", compute());
             return 0;
         }
     ";

@@ -1,0 +1,7 @@
+// @hosted
+
+fn compute() -> int {
+    let a := 7;
+    let b := 7;
+    return a * b - 7;   // 42
+}
