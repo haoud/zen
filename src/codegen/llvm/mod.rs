@@ -131,14 +131,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         func: &'a ast::Function,
     ) -> Result<FunctionValue, String> {
         self.scope.start_scope();
-        let args_types = func
-            .args
-            .iter()
-            .map(|_| self.context.i32_type().into())
-            .collect::<Vec<BasicMetadataTypeEnum>>();
-
-        let header = self.context.i32_type().fn_type(&args_types, false);
-        let prototype = self.module.add_function(&func.name, header, None);
+        let prototype =
+            self.get_function(&func.name).ok_or("Function not found")?;
 
         let entry = self.context.append_basic_block(prototype, "entry");
         self.builder.position_at_end(entry);
