@@ -10,14 +10,6 @@ pub mod lexer;
 pub mod parser;
 pub mod semantic;
 
-/// TODO:
-/// - Code generation (LLVM):
-///     - Generate all function prototypes at the beginning of the file
-///       to avoid having to declare them before they are used.
-///
-/// - Code cleanup:
-///     - Update comments
-
 /// The main entry point of the compiler. It parses the command line
 /// arguments and dispatches the appropriate action. The compiler use
 /// the `clap` crate to parse the command line arguments, and I can

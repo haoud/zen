@@ -1,9 +1,9 @@
-fn add_five(x: int) -> int {
-    return x + 5;
-}
-
 fn compute() -> int {
     let a := 7;
     let b := 7;
     return a * b - add_five(2);   // 42
+}
+
+fn add_five(x: int) -> int {
+    return x + 5;
 }

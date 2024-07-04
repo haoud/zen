@@ -108,6 +108,20 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.module.get_function(name)
     }
 
+    pub fn generate_prototype(
+        &mut self,
+        func: &'a ast::Function,
+    ) -> Result<FunctionValue, String> {
+        let args_types = func
+            .args
+            .iter()
+            .map(|_| self.context.i32_type().into())
+            .collect::<Vec<BasicMetadataTypeEnum>>();
+
+        let header = self.context.i32_type().fn_type(&args_types, false);
+        Ok(self.module.add_function(&func.name, header, None))
+    }
+
     /// Generates a function that computes the given expression and returns
     /// the result. The function is named `dummy` and takes no arguments.
     /// This is a temporary function to test the LLVM code generation until
@@ -298,8 +312,14 @@ pub fn build<'src>(funcs: &[ast::Function], output: &'src str) -> String {
     module.set_data_layout(&target_data.get_data_layout());
     module.set_triple(&target_triple);
 
-    // Compile functions
     let mut compiler = Compiler::new(&context, &builder, &module);
+
+    // Generate prototypes for all functions
+    for func in funcs {
+        let _ = compiler.generate_prototype(&func).unwrap();
+    }
+
+    // Compile functions
     for func in funcs {
         let _ = compiler.generate_fn(&func).unwrap();
     }
