@@ -113,13 +113,14 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         func: &'a ast::Function,
     ) -> Result<FunctionValue, String> {
         let args_types = func
+            .prototype
             .args
             .iter()
             .map(|_| self.context.i32_type().into())
             .collect::<Vec<BasicMetadataTypeEnum>>();
 
         let header = self.context.i32_type().fn_type(&args_types, false);
-        Ok(self.module.add_function(&func.name, header, None))
+        Ok(self.module.add_function(&func.prototype.name, header, None))
     }
 
     /// Generates a function that computes the given expression and returns
@@ -131,15 +132,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         func: &'a ast::Function,
     ) -> Result<FunctionValue, String> {
         self.scope.start_scope();
-        let prototype =
-            self.get_function(&func.name).ok_or("Function not found")?;
+        let prototype = self
+            .get_function(&func.prototype.name)
+            .ok_or("Function not found")?;
 
         let entry = self.context.append_basic_block(prototype, "entry");
         self.builder.position_at_end(entry);
 
         // For each argument in the function, create an alloca instruction
         // at the beginning of the function and store the argument in it.
-        for (arg, param) in func.args.iter().zip(prototype.get_param_iter()) {
+        for (arg, param) in
+            func.prototype.args.iter().zip(prototype.get_param_iter())
+        {
             let alloca = self
                 .builder
                 .build_alloca(self.context.i32_type(), &arg.name)

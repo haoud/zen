@@ -1,22 +1,39 @@
 use crate::lang::{self, types::Type, Span};
 
-/// A function. Functions are the main building blocks of the language.
-/// They can be called from other functions or from the entry point of
-/// the program. Functions can have a return type and a body that contains
-/// a list of expressions that are evaluated when the function is called.
+/// A function prototype. A function prototype is a declaration of a function
+/// that specifies the name of the function, the list of parameters that the
+/// function takes, and the return type of the function. Function prototypes
+/// are used to declare functions before they are defined. This allows functions
+/// to be called before they are defined, which is useful when functions call
+/// each other interdependently.
 #[derive(Debug, Clone)]
-pub struct Function<'src> {
+pub struct FunctionPrototype<'src> {
     /// The name of the function.
     pub name: &'src str,
 
     /// A list of parameters that the function takes.
     pub args: Vec<Parameter<'src>>,
 
-    /// A list of expressions that make up the body of the function.
-    pub body: Vec<Expr<'src>>,
-
     /// The return type of the function.
     pub ret: Type,
+
+    /// The span of the function prototype.
+    pub span: Span,
+}
+
+/// A function. Functions are the main building blocks of the language.
+/// They can be called from other functions or from the entry point of
+/// the program. Functions can have a return type and a body that contains
+/// a list of expressions that are evaluated when the function is called.
+#[derive(Debug, Clone)]
+pub struct Function<'src> {
+    /// The prototype of the function. The prototype contains the name of
+    /// the function, the list of parameters that the function takes, and
+    /// the return type of the function.
+    pub prototype: FunctionPrototype<'src>,
+
+    /// A list of expressions that make up the body of the function.
+    pub body: Vec<Expr<'src>>,
 
     /// The span of the function.
     pub span: Span,
@@ -42,6 +59,9 @@ pub struct Parameter<'src> {
 pub struct Expr<'src> {
     /// The kind of expression.
     pub kind: ExprKind<'src>,
+
+    /// The type of the expression.
+    pub ty: Type,
 
     /// The span of the expression.
     pub span: Span,
@@ -80,12 +100,12 @@ pub enum ExprKind<'src> {
     Error(Span),
 }
 
-impl ExprKind<'_> {
+impl<'src> ExprKind<'src> {
     /// Assume that the expression is an identifier and return the identifier
     /// as a string slice. If the expression is not an identifier, then `None`
     /// is returned.
     #[must_use]
-    pub fn as_identifier(&self) -> Option<&str> {
+    pub fn as_identifier(&self) -> Option<&'src str> {
         match self {
             ExprKind::Identifier(ident) => Some(ident),
             _ => None,

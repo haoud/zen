@@ -160,9 +160,9 @@ fn build(build: &clap::ArgMatches) {
     // and don't continue to the semantic analysis and code generation
     // phases because it doesn't make sense to do so: the AST generated
     // is not correct and we can't generate code from it.
-    if let Some((funcs, _)) = ast {
+    if let Some((mut funcs, _)) = ast {
         // Perform the semantic analysis on the AST.
-        if let Err(sematic_errors) = semantic::analyze(&funcs) {
+        if let Err(sematic_errors) = semantic::analyze(&mut funcs) {
             sematic_errors.into_iter().for_each(|error| {
                 let start = error.span.start;
                 let end = error.span.end;

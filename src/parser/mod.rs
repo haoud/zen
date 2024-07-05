@@ -60,10 +60,15 @@ pub fn parse_fn<'tokens, 'src: 'tokens>() -> impl Parser<
             just(Token::Delimiter("}")),
         ))
         .map_with(|(((name, args), ret), body), e| ast::Function {
-            name,
-            args,
+            prototype: ast::FunctionPrototype {
+                name,
+                args,
+                ret,
+                // FIXME: This is wrong (should be the span of the
+                // prototype and not the whole function)
+                span: e.span(),
+            },
             body,
-            ret,
             span: e.span(),
         })
 }
@@ -86,6 +91,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             Token::Identifier(ident) => ast::ExprKind::Identifier(ident),
         }
         .map_with(|ident, e| ast::Expr {
+            ty: lang::Type::Infer,
             kind: ident,
             span: e.span(),
         });
@@ -104,6 +110,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             .then_ignore(just(Token::Delimiter(";")))
             .map_with(|expr, e| ast::Expr {
                 kind: ast::ExprKind::Return(Box::new(expr)),
+                ty: lang::Type::Never,
                 span: e.span(),
             });
 
@@ -117,6 +124,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             .then_ignore(just(Token::Delimiter(";")))
             .map_with(|(ident, expr), e| ast::Expr {
                 kind: ast::ExprKind::Let(Box::new(ident), Box::new(expr)),
+                ty: lang::Type::Unit,
                 span: e.span(),
             });
 
@@ -126,6 +134,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
         let atom = value
             .map_with(|value, e| ast::Expr {
                 kind: ast::ExprKind::Literal(value),
+                ty: lang::Type::Int,
                 span: e.span(),
             })
             .or(ident)
@@ -147,6 +156,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
                 .repeated(),
             |func, args, e| ast::Expr {
                 kind: ast::ExprKind::Call(Box::new(func), args),
+                ty: lang::Type::Infer,
                 span: e.span(),
             },
         );
@@ -158,6 +168,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             product_ops().then(call).repeated(),
             |lhs, (op, rhs), e| ast::Expr {
                 kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                ty: lang::Type::Infer,
                 span: e.span(),
             },
         );
@@ -167,6 +178,7 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
             sum_ops().then(product).repeated(),
             |lhs, (op, rhs), e| ast::Expr {
                 kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                ty: lang::Type::Infer,
                 span: e.span(),
             },
         );

@@ -71,14 +71,14 @@ impl Codegen {
     ) {
         // Generate the function return type and name
         self.code += "int ";
-        self.code += &func.name;
+        self.code += &func.prototype.name;
         self.code += "(";
 
         // Generate the function parameters
-        for (i, param) in func.args.iter().enumerate() {
+        for (i, param) in func.prototype.args.iter().enumerate() {
             self.code += "int ";
             self.code += &param.name;
-            if i < func.args.len() - 1 {
+            if i < func.prototype.args.len() - 1 {
                 self.code += ", ";
             }
         }
