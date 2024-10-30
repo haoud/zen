@@ -30,7 +30,7 @@ pub enum Type {
 impl Type {
     /// Check if the type can be coerced to another type. This is useful
     /// to check if a function that returns a `Never` type can be used in
-    /// a context that expects a different type.
+    /// a context that expects a different type. 
     #[must_use]
     pub fn can_coerce_to(&self, other: &Self) -> bool {
         match (self, other) {

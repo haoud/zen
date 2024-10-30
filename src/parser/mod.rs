@@ -119,7 +119,9 @@ pub fn expr_parser<'tokens, 'src: 'tokens>() -> impl Parser<
         // to the identifier `<ident>`.
         let let_binding = just(Token::Keyword("let"))
             .ignore_then(ident)
-            .then_ignore(just(Token::Operator(":=")))
+            .then_ignore(just(Token::Delimiter(":")))
+            .then_ignore(ident.or_not())
+            .then_ignore(just(Token::Operator("=")))
             .then(expr.clone())
             .then_ignore(just(Token::Delimiter(";")))
             .map_with(|(ident, expr), e| ast::Expr {

@@ -78,8 +78,21 @@ pub fn lexer<'a>(
 ) -> impl Parser<'a, &'a str, Vec<(Token<'a>, Span)>, extra::Err<Rich<'a, char, Span>>>
 {
     // A lexer for parsing keywords
-    let keyword =
-        choice((just("return"), just("let"), just("fn"))).map(Token::Keyword);
+    let keyword = choice((
+        just("continue"),
+        just("return"),
+        just("break"),
+        just("const"),
+        just("false"),
+        just("while"),
+        just("true"),
+        just("else"),
+        just("let"),
+        just("mut"),
+        just("fn"),
+        just("if"),
+    ))
+    .map(Token::Keyword);
 
     // A lexer for parsing C-style identifiers
     let ident = text::ascii::ident().map(Token::Identifier);
@@ -108,17 +121,51 @@ pub fn lexer<'a>(
     //
     // However, operators can be ambiguous. For example, `&` can either
     // represent a bitwise AND operation or an address-of operator, depending
-    // on the context. To resolve this ambiguity, we need to consider the
-    // surrounding tokens when parsing operators. This will not be covered
-    // in the lexer, but will be handled in the parser.
+    // on the context. To resolve this ambiguity, we must consider longer
+    // operators first before shorter operators. To ensure that longer operators
+    // will not be consumed as shorter operators.
     let operator = choice((
-        just(":="), // Infer type and set variable
-        just("->"), // Arrow operator
-        just("+"),  // Addition
-        just("-"),  // Subtraction
-        just("*"),  // Multiplication
-        just("/"),  // Division
-        just("%"),  // Modulo
+        choice((
+            just("<<="), // Left shift assignment
+            just(">>="), // Right shift assignment
+        )),
+        choice((
+            just("->"), // Arrow operator
+            just("=="), // Equality
+            just("!="), // Inequality
+            just(">="), // Greater or equal
+            just("<="), // Less or equal
+            just("&&"), // Logical AND
+            just("||"), // Logical OR
+            just("<<"), // Left shift
+            just(">>"), // Right shift
+        )),
+        choice((
+            just("+="), // Addition assignment
+            just("-="), // Subtraction assignment
+            just("*="), // Multiplication assignment
+            just("/="), // Division assignment
+            just("%="), // Modulo assignment
+            just("&="), // Bitwise AND assignment
+            just("|="), // Bitwise OR assignment
+            just("^="), // Bitwise XOR assignment
+        )),
+        choice((
+            just("="), // Assignment
+            just("+"), // Addition
+            just("-"), // Subtraction
+            just("*"), // Multiplication
+            just("/"), // Division
+            just("%"), // Modulo
+            just("^"), // Bitwise XOR
+            just("&"), // Bitwise AND
+            just("|"), // Bitwise OR
+            just("~"), // Bitwise NOT
+            just("!"), // Logical NOT
+            just(">"), // Greater than
+            just("<"), // Less than
+            just("."), // Member access
+        )),
     ))
     .to_slice()
     .map(Token::Operator);
@@ -127,10 +174,12 @@ pub fn lexer<'a>(
     let delimiter = choice((
         just("("),
         just(")"),
-        just(":"),
-        just(";"),
+        just("["),
+        just("]"),
         just("{"),
         just("}"),
+        just(":"),
+        just(";"),
         just(","),
     ))
     .to_slice()
