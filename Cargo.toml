@@ -6,9 +6,8 @@ authors = ["Romain Cadilhac"]
 description = "A simple and relaxing programming language"
 
 [dependencies]
-inkwell = { git = "https://github.com/TheDan64/inkwell", features = ["llvm18-0"] }
 chumsky = { git = "https://github.com/zesterer/chumsky" }
-ariadne = { version = "0.4.1", features = [] }
+ariadne = { version = "0.5", features = [] }
 clap = { version = "4.5.4", features = ["cargo"] }
 
 [profile.release]

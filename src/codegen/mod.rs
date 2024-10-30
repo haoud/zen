@@ -32,4 +32,3 @@
 //! will likely be a simple assembly backend, only supporting a few platforms.
 
 pub mod c;
-pub mod llvm;

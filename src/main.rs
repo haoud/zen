@@ -144,7 +144,7 @@ fn build(build: &clap::ArgMatches) {
             let start = error.span().start;
             let end = error.span().end;
             let range = start..end;
-            ariadne::Report::build(ariadne::ReportKind::Error, path, start)
+            ariadne::Report::build(ariadne::ReportKind::Error, (path, range.clone()))
                 .with_label(
                     ariadne::Label::new((path, range))
                         .with_color(ariadne::Color::Red),
@@ -167,7 +167,7 @@ fn build(build: &clap::ArgMatches) {
                 let start = error.span.start;
                 let end = error.span.end;
                 let range = start..end;
-                ariadne::Report::build(ariadne::ReportKind::Error, path, start)
+                ariadne::Report::build(ariadne::ReportKind::Error, (path, range.clone()))
                     .with_label(
                         ariadne::Label::new((path, range))
                             .with_color(ariadne::Color::Red),
@@ -181,25 +181,18 @@ fn build(build: &clap::ArgMatches) {
             return;
         }
 
-        if build.get_flag("llvm-backend") {
-            let code = codegen::llvm::build(&funcs, output);
-            if build.get_flag("dump-ir") {
-                println!("Intermediate LLVM Representation:");
-                println!("{}", code);
-            }
-        } else {
-            let code = codegen::c::generate(&funcs);
-            if build.get_flag("dump-ir") {
-                println!("Intermediate C Representation:");
-                println!("{}", code);
-            }
+        
+        let code = codegen::c::generate(&funcs);
+        if build.get_flag("dump-ir") {
+            println!("Intermediate C Representation:");
+            println!("{}", code);
+        }
 
-            let clang = codegen::c::compiler::Clang::new();
-            match clang.exists() {
-                true => clang.build(&code, output),
-                false => {
-                    panic!("Error: clang is not installed on the system")
-                }
+        let clang = codegen::c::compiler::Clang::new();
+        match clang.exists() {
+            true => clang.build(&code, output),
+            false => {
+                panic!("Error: clang is not installed on the system")
             }
         }
     }
