@@ -2,8 +2,46 @@
 /// expression evaluates to. For now, the only type supported is `Int`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
-    /// A integer type.
+    /// A signed 8-bit integer type.
+    I8,
+
+    /// A unsigned 8-bit integer type.
+    U8,
+
+    /// A signed 16-bit integer type.
+    I16,
+
+    /// A unsigned 16-bit integer type.
+    U16,
+
+    /// A signed 32-bit integer type.
+    I32,
+
+    /// A unsigned 32-bit integer type.
+    U32,
+
+    /// A signed 64-bit integer type.
+    I64,
+
+    /// A unsigned 64-bit integer type.
+    U64,
+
+    /// A integer type. The integer type size is platform dependent and
+    /// is determined by the target architecture, and is usually the
+    /// same as the size of a pointer.
     Int,
+
+    /// A unsigned integer type. The unsigned integer type size is platform
+    /// dependent and is determined by the target architecture, and is
+    /// usually the same as the size of a pointer.
+    Uint,
+
+    /// A boolean type. This type can only have two values: `true` or `false`.
+    /// This type is used to represent the result of a comparison operation.
+    Bool,
+
+    /// A character type. This type represents a single ASCII character.
+    Char,
 
     /// A unit type. The unit type is used to represent the absence of a value.
     /// This work exactly the same as the unit type in Rust (i.e. `()`) and
@@ -30,7 +68,7 @@ pub enum Type {
 impl Type {
     /// Check if the type can be coerced to another type. This is useful
     /// to check if a function that returns a `Never` type can be used in
-    /// a context that expects a different type. 
+    /// a context that expects a different type.
     #[must_use]
     pub fn can_coerce_to(&self, other: &Self) -> bool {
         match (self, other) {
@@ -44,7 +82,18 @@ impl Type {
 impl core::fmt::Display for Type {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
+            Type::I8 => write!(f, "i8"),
+            Type::U8 => write!(f, "u8"),
+            Type::I16 => write!(f, "i16"),
+            Type::U16 => write!(f, "u16"),
+            Type::I32 => write!(f, "i32"),
+            Type::U32 => write!(f, "u32"),
+            Type::I64 => write!(f, "i64"),
+            Type::U64 => write!(f, "u64"),
             Type::Int => write!(f, "int"),
+            Type::Uint => write!(f, "uint"),
+            Type::Bool => write!(f, "bool"),
+            Type::Char => write!(f, "char"),
             Type::Unit => write!(f, "()"),
             Type::Never => write!(f, "!"),
             Type::Infer => write!(f, "<infer>"),

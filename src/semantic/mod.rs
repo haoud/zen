@@ -30,7 +30,10 @@ use crate::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// Represents a variable in the source code.
+/// Represents a variable name and its type. This structure is used to detect
+/// redeclarations of variables and to check if a variable is used in a way
+/// that is not allowed by its type (for example, if a floating point number
+/// is multiplied by a string).
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct Variable<'src> {
@@ -53,7 +56,7 @@ struct SemanticAnalyzer<'src> {
     prototypes: Vec<FunctionPrototype<'src>>,
 
     /// A list of errors that the semantic analyzer found during the
-    /// analysis.s
+    /// analysis.
     errors: Vec<lang::Error>,
 }
 
@@ -74,18 +77,26 @@ impl<'src> SemanticAnalyzer<'src> {
     }
 
     /// Verify if a variable with the given name exists in the current
-    /// scope and above.
+    /// scope or above.
     #[must_use]
     pub fn variable_exists(&self, name: &str) -> bool {
         self.variables.iter().any(|scope| scope.contains_key(name))
     }
 
-    /// Start a new scope.
+    /// Start a new scope. All variables declared in the new scope will be
+    /// removed from the variables list when the scope is ended. This function
+    /// can be called multiple times to create nested scopes.
     pub fn start_scope(&mut self) {
         self.variables.push(HashMap::new());
     }
 
-    /// End the current scope.
+    /// End the current scope. All variables declared in the current scope
+    /// are removed from the variables list and cannot be accessed anymore.
+    ///
+    /// # Panics
+    /// Panics if the current scope is the global scope. The global scope
+    /// cannot obviously be removed and is probably a sign of a bug in the
+    /// semantic analysis code.
     pub fn end_scope(&mut self) {
         self.variables.pop();
     }
@@ -100,8 +111,8 @@ impl<'src> SemanticAnalyzer<'src> {
             .insert(name, Variable { name, ty });
     }
 
-    /// Get a variable by name. The function returns `None` if the variable
-    /// is not found in the current scope or above.
+    /// Get a variable by name, or returns `None` if the variable is not
+    /// found in the current scope or above.
     #[must_use]
     pub fn get_variable(&self, name: &str) -> Option<&Variable> {
         for scope in self.variables.iter().rev() {
@@ -112,32 +123,34 @@ impl<'src> SemanticAnalyzer<'src> {
         None
     }
 
-    /// Get a function by name. The function returns `None` if the function
-    /// is not found in the list of functions.
+    /// Get a function prototype by name, or returns `None` if the function is
+    /// not found in the list of functions.
     #[must_use]
     pub fn get_function_prototype(
         &self,
         name: &str,
     ) -> Option<&ast::FunctionPrototype<'src>> {
-        self.prototypes.iter().find(|f| f.name == name)
+        self.prototypes.iter().find(|f| f.ident.name == name)
     }
 
-    /// Check a list of functions for semantic errors.
+    /// Check a list of functions for semantic errors and add any errors found
+    /// to the errors list of the semantic analyzer.
     pub fn check_functions(&mut self, functions: &mut [ast::Function<'src>]) {
-        // Verify that each function has a unique name using an hashset.
+        // Verify for function redeclarations.
         let mut names = HashSet::new();
         for function in functions.iter_mut() {
-            if !names.insert(function.prototype.name) {
+            if !names.insert(function.prototype.ident.name) {
                 self.errors.push(lang::Error {
                     msg: format!(
                         "Function {:?} redeclared",
-                        function.prototype.name
+                        function.prototype.ident.name
                     ),
                     span: function.prototype.span,
                 });
             }
         }
 
+        // Check each function for semantic errors.
         for function in functions {
             self.check_function(function);
         }
@@ -154,32 +167,63 @@ impl<'src> SemanticAnalyzer<'src> {
         // that futher references to this parameter will be considered as
         // a reference to the first declaration.
         for param in &f.prototype.args {
-            if self.variable_exists(param.name) {
+            if self.variable_exists(param.ident.name) {
                 self.errors.push(lang::Error {
-                    msg: format!("Parameter {:?} redeclared", param.name),
+                    msg: format!("Parameter {:?} redeclared", param.ident.name),
                     span: param.span,
                 });
             } else {
-                self.add_variable(&param.name, param.ty);
+                self.add_variable(&param.ident.name, param.ty);
             }
         }
 
         // Check the function body for semantic errors.
-        for expr in &mut f.body {
-            self.infer_type(expr);
-            self.check_expr(expr);
+        for stmt in &mut f.body {
+            self.infer_stmt_type(stmt);
+            self.check_stmt(stmt);
         }
         self.end_scope();
     }
 
+    pub fn check_stmt(&mut self, stmt: &mut ast::Stmt<'src>) {
+        match &mut stmt.kind {
+            ast::StmtKind::Expr(expr) => {
+                self.check_expr(expr);
+            }
+            ast::StmtKind::Let(variable, assign) => {
+                // Check if the variable declared is a valid identifier.
+                // If it is, check if it is already declared in the
+                // current scope.
+                if self.variable_exists(&variable.ident.name) {
+                    self.errors.push(lang::Error {
+                        msg: format!(
+                            "Variable {:?} redeclared",
+                            variable.ident.name
+                        ),
+                        span: variable.ident.span,
+                    });
+                }
+
+                self.check_expr(assign);
+                self.add_variable(&variable.ident.name, assign.ty);
+            }
+            ast::StmtKind::Return(expr) => {
+                // TODO: Check if the return type of the function is the same
+                // as the type of the expression.
+                self.check_expr(expr);
+            }
+            ast::StmtKind::Error(..) => unreachable!(),
+        }
+    }
+
     /// Check an expression for semantic errors.
-    pub fn check_expr(&mut self, expr: &ast::Expr<'src>) {
-        match &expr.kind {
+    pub fn check_expr(&mut self, expr: &mut ast::Expr<'src>) {
+        match &mut expr.kind {
             ast::ExprKind::Call(func, args) => {
                 // Get the name of the function called. We verify that the
                 // function call is an identifier, as we do not support
                 // function pointers yet.
-                let name = match func.kind.as_identifier() {
+                let ident = match func.kind.as_identifier() {
                     Some(name) => name,
                     None => {
                         self.errors.push(lang::Error {
@@ -191,23 +235,31 @@ impl<'src> SemanticAnalyzer<'src> {
                     }
                 };
 
+                // Infer all the types of the arguments if needed.
+                for arg in args.iter_mut() {
+                    self.infer_expr_type(arg);
+                }
+
                 // Get the function information from the functions list. If
                 // the function is not declared, add an error to the errors
                 // vector and return.
-                let fn_info =
-                    match self.prototypes.iter().find(|f| f.name == name) {
-                        Some(fninfo) => fninfo,
-                        None => {
-                            self.errors.push(lang::Error {
-                                msg: format!(
-                                    "Use of undeclared function {:?}",
-                                    name
-                                ),
-                                span: func.span,
-                            });
-                            return;
-                        }
-                    };
+                let fn_info = match self
+                    .prototypes
+                    .iter()
+                    .find(|f| f.ident.name == ident.name)
+                {
+                    Some(fninfo) => fninfo,
+                    None => {
+                        self.errors.push(lang::Error {
+                            msg: format!(
+                                "Use of undeclared function {:?}",
+                                ident.name
+                            ),
+                            span: func.span,
+                        });
+                        return;
+                    }
+                };
 
                 // Check if the number of arguments is correct. This is the
                 // first step of the type checking process.
@@ -215,7 +267,7 @@ impl<'src> SemanticAnalyzer<'src> {
                     self.errors.push(lang::Error {
                         msg: format!(
                             "Function {} called with {} arguments, expected {}",
-                            name,
+                            ident.name,
                             args.len(),
                             fn_info.args.len()
                         ),
@@ -225,13 +277,13 @@ impl<'src> SemanticAnalyzer<'src> {
 
                 // Check if the arguments are of the correct type. This is
                 // the second step of the type checking process.
-                for (arg, var) in args.iter().zip(&fn_info.args) {
+                for (arg, var) in args.iter_mut().zip(&fn_info.args) {
                     if arg.ty != var.ty {
                         self.errors.push(lang::Error {
                             msg: format!(
                                 "Argument of type `{}` passed to function {:?} \
                                 that expects type `{}`",
-                                arg.ty, name, var.ty
+                                arg.ty, ident.name, var.ty
                             ),
                             span: arg.span,
                         });
@@ -239,7 +291,7 @@ impl<'src> SemanticAnalyzer<'src> {
                 }
             }
             ast::ExprKind::Identifier(ident) => {
-                if !self.variable_exists(ident) {
+                if !self.variable_exists(ident.name) {
                     self.errors.push(lang::Error {
                         msg: format!(
                             "Use of undeclared identifier {:?}",
@@ -248,32 +300,6 @@ impl<'src> SemanticAnalyzer<'src> {
                         span: expr.span,
                     });
                 }
-            }
-            ast::ExprKind::Let(ident, assign) => {
-                // Check if the variable declared is a valid identifier.
-                // If it is, check if it is already declared in the
-                // current scope.
-                if let Some(name) = ident.kind.as_identifier() {
-                    if self.variable_exists(name) {
-                        self.errors.push(lang::Error {
-                            msg: format!("Variable {:?} redeclared", name),
-                            span: ident.span,
-                        });
-                    }
-
-                    // FIXME: Add the real variable type here.
-                    self.check_expr(assign);
-                    self.add_variable(name, lang::types::Type::Int);
-                } else {
-                    self.errors.push(lang::Error {
-                        msg: "Variable name must be an identifier".to_string(),
-                        span: ident.span,
-                    });
-                    self.check_expr(assign);
-                }
-            }
-            ast::ExprKind::Return(expr) => {
-                self.check_expr(expr);
             }
             ast::ExprKind::Binary(_, lhs, rhs) => {
                 self.check_expr(lhs);
@@ -284,44 +310,77 @@ impl<'src> SemanticAnalyzer<'src> {
         }
     }
 
+    pub fn infer_stmt_type(&mut self, stmt: &mut ast::Stmt) {
+        match &mut stmt.kind {
+            ast::StmtKind::Expr(expr) => {
+                self.infer_expr_type(expr);
+            }
+            ast::StmtKind::Let(variable, expr) => {
+                if variable.ty == lang::Type::Infer {
+                    self.infer_expr_type(expr);
+                    variable.ty = expr.ty;
+                } else {
+                    self.infer_expr_type(expr);
+                    if variable.ty != expr.ty {
+                        self.errors.push(lang::Error {
+                            msg: format!(
+                                "Variable {:?} declared with type {:?} but \
+                                assigned an expression of type {:?}",
+                                variable.ident.name, variable.ty, expr.ty
+                            ),
+                            span: variable.ident.span,
+                        });
+                    }
+                }
+            }
+            ast::StmtKind::Return(expr) => {
+                self.infer_expr_type(expr);
+            }
+            ast::StmtKind::Error(..) => unreachable!(),
+        }
+    }
+
     /// Infer the type of an expression if it is not known. This is used
     /// when the type of an expression cannot be determined during the parsing
     /// phase. If the type of the expression is already known, this function
     /// does nothing.
-    pub fn infer_type(&mut self, expr: &mut ast::Expr) {
+    pub fn infer_expr_type(&mut self, expr: &mut ast::Expr) {
         if expr.ty != lang::Type::Infer {
             return;
         }
 
         match &mut expr.kind {
-            ast::ExprKind::Call(expr, _) => {
-                let name = expr
+            ast::ExprKind::Call(ident, _) => {
+                let ident = ident
                     .kind
                     .as_identifier()
                     .expect("Function call must be an identifier");
 
                 let function = self
-                    .get_function_prototype(name)
+                    .get_function_prototype(ident.name)
                     .expect("Function not found");
 
                 // Set the type of the expression to the return type
                 // of the function.
                 expr.ty = function.ret;
             }
-            ast::ExprKind::Identifier(name) => {
+            ast::ExprKind::Identifier(ident) => {
                 // Find the identifier in the variables list and set the type
                 // of the expression to the type of the variable.
-                expr.ty = self.get_variable(name).unwrap().ty;
+                expr.ty = self.get_variable(ident.name).unwrap().ty;
             }
             ast::ExprKind::Binary(_, left, right) => {
-                self.infer_type(left);
-                self.infer_type(right);
+                self.infer_expr_type(left);
+                self.infer_expr_type(right);
 
                 // If the type of the left and right expressions are not the
                 // same, add an error to the errors vector.
                 if left.ty != right.ty {
                     self.errors.push(lang::Error {
-                        msg: "Type mismatch".to_string(),
+                        msg: format!(
+                            "Binary operation with different types: {} and {}",
+                            left.ty, right.ty
+                        ),
                         span: expr.span,
                     });
                 }
@@ -331,24 +390,10 @@ impl<'src> SemanticAnalyzer<'src> {
                 expr.ty = left.ty;
             }
 
-            ast::ExprKind::Let(_, _) => {
-                // The type of a let expression is always the `Unit` type
-                // since the let expression cannot have a type used in an
-                // expression.
-                unreachable!();
-            }
-
-            ast::ExprKind::Return(_) => {
-                // The type of a return expression is always the `Unit` type
-                // since the return expression cannot have a type used in
-                // an expression.
-                unreachable!();
-            }
-
             ast::ExprKind::Literal(_) => {
-                // The type of a literal expression is always the `Int` type
-                // during the parsing phase and should not be `Infer`.
-                unreachable!();
+                // TODO: Encode the type of the literal in the AST if specified
+                // by the type suffix.
+                expr.ty = lang::Type::Int;
             }
 
             ast::ExprKind::Error(_) => {
@@ -363,8 +408,8 @@ impl<'src> SemanticAnalyzer<'src> {
 
 /// Analyze the given list of functions for semantic errors and return a list
 /// of errors if any are found.
-pub fn analyze(
-    functions: &mut [ast::Function],
+pub fn analyze<'src>(
+    functions: &mut [ast::Function<'src>],
 ) -> Result<(), Vec<lang::Error>> {
     // Check each function for semantic errors.
     let mut analyzer = SemanticAnalyzer::new(functions);

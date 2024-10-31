@@ -36,11 +36,6 @@ fn main() {
                     arg!(--"dump-ir" "Dump the intermediate representation to the console")
                     .action(clap::ArgAction::SetTrue),
                 )
-                .arg(
-                    arg!(--"llvm-backend"                    
-                        "Use the LLVM backend to generate code (experimental)")
-                    .action(clap::ArgAction::SetTrue),
-                ),
         )
         .subcommand(
             clap::Command::new("translate")
@@ -109,6 +104,7 @@ fn build(build: &clap::ArgMatches) {
         }
     }
 
+    // Parse the tokenized input using the parser.
     let (ast, parse_errors) = if let Some(tokens) = &tokens {
         let (ast, parser_errors) = parser::parse_module()
             .map_with(|ast, errors| (ast, errors.span()))
@@ -144,16 +140,19 @@ fn build(build: &clap::ArgMatches) {
             let start = error.span().start;
             let end = error.span().end;
             let range = start..end;
-            ariadne::Report::build(ariadne::ReportKind::Error, (path, range.clone()))
-                .with_label(
-                    ariadne::Label::new((path, range))
-                        .with_color(ariadne::Color::Red),
-                )
-                .with_message(format!("{}", error))
-                .with_code(0)
-                .finish()
-                .eprint((path, ariadne::Source::from(input.clone())))
-                .unwrap();
+            ariadne::Report::build(
+                ariadne::ReportKind::Error,
+                (path, range.clone()),
+            )
+            .with_label(
+                ariadne::Label::new((path, range))
+                    .with_color(ariadne::Color::Red),
+            )
+            .with_message(format!("{}", error))
+            .with_code(0)
+            .finish()
+            .eprint((path, ariadne::Source::from(input.clone())))
+            .unwrap();
         });
 
     // If there are any syntax errors or parsing errors, we stop here
@@ -167,21 +166,23 @@ fn build(build: &clap::ArgMatches) {
                 let start = error.span.start;
                 let end = error.span.end;
                 let range = start..end;
-                ariadne::Report::build(ariadne::ReportKind::Error, (path, range.clone()))
-                    .with_label(
-                        ariadne::Label::new((path, range))
-                            .with_color(ariadne::Color::Red),
-                    )
-                    .with_message(error.msg)
-                    .with_code(0)
-                    .finish()
-                    .eprint((path, ariadne::Source::from(input.clone())))
-                    .unwrap();
+                ariadne::Report::build(
+                    ariadne::ReportKind::Error,
+                    (path, range.clone()),
+                )
+                .with_label(
+                    ariadne::Label::new((path, range))
+                        .with_color(ariadne::Color::Red),
+                )
+                .with_message(error.msg)
+                .with_code(0)
+                .finish()
+                .eprint((path, ariadne::Source::from(input.clone())))
+                .unwrap();
             });
             return;
         }
 
-        
         let code = codegen::c::generate(&funcs);
         if build.get_flag("dump-ir") {
             println!("Intermediate C Representation:");

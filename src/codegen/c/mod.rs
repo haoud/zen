@@ -1,4 +1,42 @@
-use crate::ast;
+//! The C code generator for the Zen programming language. This module
+//! is responsible for generating the C code from the AST. The generated
+//! code is then compiled by the C compiler to produce the final binary.
+//!
+//! The C backend produce human-readable C code that can be easily debugged
+//! or inspected, and is a feature of the C backend. This is useful for
+//! debugging purposes, or for understanding how the code generator works.
+//!
+//! # Pros and Cons
+//!
+//! ## Pros
+//!  - Way easier to implement: The C backend is easier to implement than
+//!    a direct code generation to the target architecture or by using an
+//!    intermediate representation (IR) like LLVM IR. This is because C is
+//!    syntactically similar to Zen, which makes the code generation process
+//!    simpler and more straightforward.
+//!
+//!  - Easier to debug: The generated C code is human-readable and can be
+//!    easily debugged using standard C debugging tools, or even by inspecting
+//!    the generated code directly. This is useful for debugging the code
+//!    generator itself, or for debugging the generated code.
+//!
+//! ## Cons
+//!  - Slower build times: The generated C code must be compiled by the C
+//!    compiler to produce the final binary. This adds an extra step to the
+//!    build process and increases the build times compared to a direct
+//!    code generation to the target architecture.
+//!
+//!  - Less control: The generated C code is not as optimized as it could
+//!    be if we were to generate the code directly to the target architecture.
+//!
+//!  - Less flexibility: The generated C code is limited by the C language
+//!    and its features. This means that some features of the Zen language
+//!    may not be possible to implement in C, or may require more complex
+//!    code generation. For example, we cannot easily specify a behavior when
+//!    an unsigned integer overflows in C, since the behavior is undefined in C,
+//!    while it is well-defined in Zen (the value wraps around, used by almost
+//!    all computer architectures).
+use crate::{ast, lang};
 
 pub mod compiler;
 
@@ -18,6 +56,7 @@ pub struct Codegen {
 }
 
 impl Codegen {
+    /// Create a new empty code generator
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -33,6 +72,7 @@ impl Codegen {
     pub fn add_hosted_includes(&mut self) {
         self.code += "#include <stdio.h>\n";
         self.code += "#include <stdlib.h>\n";
+        self.code += "#include <stdint.h>\n";
     }
 
     /// Add the main function to the generated code. This function
@@ -71,13 +111,13 @@ impl Codegen {
     ) {
         // Generate the function return type and name
         self.code += "int ";
-        self.code += &func.prototype.name;
+        self.code += &func.prototype.ident.name;
         self.code += "(";
 
-        // Generate the function parameters
+        // Generate the function name
         for (i, param) in func.prototype.args.iter().enumerate() {
             self.code += "int ";
-            self.code += &param.name;
+            self.code += &param.ident.name;
             if i < func.prototype.args.len() - 1 {
                 self.code += ", ";
             }
@@ -100,8 +140,8 @@ impl Codegen {
         self.code += "{\n";
         self.depth += 1;
 
-        for expr in &func.body {
-            let code = &self.generate_expr(expr);
+        for stmt in &func.body {
+            let code = &self.generate_stmt(stmt);
             self.indent_codegen();
             self.code += code;
             self.code += "\n";
@@ -111,14 +151,37 @@ impl Codegen {
         self.depth -= 1;
     }
 
+    /// Generate the C code for the given statement. This function
+    /// will recursively generate the C code for the statement and
+    /// its children. It will return the generated C code as a string.
+    #[must_use]
+    pub fn generate_stmt(&mut self, stmt: &ast::Stmt) -> String {
+        match &stmt.kind {
+            ast::StmtKind::Expr(expr) => self.generate_expr(expr),
+            ast::StmtKind::Let(variable, expr) => {
+                let expr = self.generate_expr(expr);
+                let ty = self.generate_type(&variable.ty);
+                format!("{} {} = {};", ty, variable.ident.name, expr)
+            }
+            ast::StmtKind::Return(expr) => {
+                let expr = self.generate_expr(expr);
+                format!("return {};", expr)
+            }
+            ast::StmtKind::Error(..) => unreachable!(),
+        }
+    }
+
     /// Generate the C code for the given expression. This function
     /// will recursively generate the C code for the expression and
     /// its children. It will return the generated C code as a string.
+    #[must_use]
     pub fn generate_expr(&mut self, expr: &ast::Expr) -> String {
         match &expr.kind {
+            ast::ExprKind::Identifier(ident) => ident.name.to_string(),
             ast::ExprKind::Call(func, args) => {
                 let mut code = String::new();
-                code += &func.kind.as_identifier().unwrap();
+
+                code += func.kind.as_identifier().unwrap().name;
                 code += "(";
                 for (i, arg) in args.iter().enumerate() {
                     code += &self.generate_expr(arg);
@@ -129,23 +192,43 @@ impl Codegen {
                 code += ")";
                 code
             }
-            ast::ExprKind::Literal(x) => format!("{}", x),
+            ast::ExprKind::Literal(literal) => format!("{}", literal.value),
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 let lhs = self.generate_expr(&lhs);
                 let rhs = self.generate_expr(&rhs);
                 format!("({} {} {})", lhs, op, rhs)
             }
-            ast::ExprKind::Let(ident, expr) => {
-                let ident = self.generate_expr(&ident);
-                let expr = self.generate_expr(&expr);
-                format!("int {} = {};", ident, expr)
-            }
-            ast::ExprKind::Identifier(ident) => ident.to_string(),
-            ast::ExprKind::Return(expr) => {
-                let expr = self.generate_expr(&expr);
-                format!("return {};", expr)
-            }
             ast::ExprKind::Error(..) => unreachable!(),
+        }
+    }
+
+    /// Convert the built-in Zen types to C types.
+    ///
+    /// # Panics
+    /// This function will panic if the type is `Never` or `Infer` is passed
+    /// to the function:
+    ///  - The type checker should have remplaced all Infer types by concrete
+    ///    types before the code generation phase.
+    ///  - The Never type has no equivalent in C and should not be used in the
+    ///    generated code, since it represents an value that can never be
+    ///    constructed.
+    pub fn generate_type(&mut self, ty: &lang::Type) -> String {
+        match ty {
+            lang::Type::I8 => "int8_t".to_string(),
+            lang::Type::I16 => "int16_t".to_string(),
+            lang::Type::I32 => "int32_t".to_string(),
+            lang::Type::I64 => "int64_t".to_string(),
+            lang::Type::U8 => "uint8_t".to_string(),
+            lang::Type::U16 => "uint16_t".to_string(),
+            lang::Type::U32 => "uint32_t".to_string(),
+            lang::Type::U64 => "uint64_t".to_string(),
+            lang::Type::Int => "int".to_string(),
+            lang::Type::Uint => "unsigned int".to_string(),
+            lang::Type::Bool => "bool".to_string(),
+            lang::Type::Char => "char".to_string(),
+            lang::Type::Unit => "void".to_string(),
+            lang::Type::Never => unreachable!(),
+            lang::Type::Infer => unreachable!(),
         }
     }
 }

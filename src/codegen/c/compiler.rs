@@ -1,6 +1,15 @@
 use std::io::Write;
 
-/// The different kinds of C compilers that we support.
+/// The different kinds of C compilers that we support. This may be useful
+/// in the future if we want to support more compilers or if we want to
+/// add specific behavior for each compiler.
+///
+/// However, this prevents us from using some compiler-specific features that
+/// may be useful. For example, the __attribute__ keyword from GCC is supported
+/// by Clang, but not by other compilers like MSVC or TCC.
+///
+/// In the future, we probably only support one compiler, so this enum may
+/// be removed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompilerKind {
     Clang,
