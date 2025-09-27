@@ -1,0 +1,8 @@
+int main() {
+    return 0;
+}
+
+/// Error E001: Redefinition of function 'main'
+int main() {
+    return 1; 
+}

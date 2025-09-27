@@ -1,0 +1,3 @@
+int main() {
+    /// Error 003: Missing return statement in function 'main'
+}
