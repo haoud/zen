@@ -108,35 +108,126 @@ pub fn expr_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
-    // Parse a number literal.
-    let value = select! {
-        Token::Number(val) = e => Spanned::new(
-            ast::Literal {
-                ty: lang::Type::Int,
-                value: val,
+    recursive(|expr| {
+        // Parse a number literal.
+        let value = select! {
+            Token::Number(val) = e => Spanned::new(
+                ast::Literal {
+                    ty: lang::Type::Int,
+                    value: val,
+                },
+                e.span()
+            )
+        };
+
+        // An atom is either a literal or a parenthesized expression. They have the maximum
+        // precedence in the expression hierarchy, since they cannot be broken down any further,
+        // called "atoms" for that reason.
+        let atom = value
+            .map_with(|lit, e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::Literal(lit),
+                        ty: lang::Type::Int,
+                    },
+                    e.span(),
+                )
+            })
+            .or(bool_value_parser())
+            .or(expr.delimited_by(just(Token::Delimiter("(")), just(Token::Delimiter(")"))))
+            .boxed();
+
+        // Parse product operators (e.g. `*` and `/`). These have higher precedence
+        // than sum operators, so we parse them first.
+        let product = atom
+            .clone()
+            .foldl_with(product_ops().then(atom).repeated(), |lhs, (op, rhs), e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            })
+            .boxed();
+
+        // Parse sum operators (e.g. `+` and `-`). These have lower precedence than
+        // product operators, so we parse them after.
+        let sum = product
+            .clone()
+            .foldl_with(sum_ops().then(product).repeated(), |lhs, (op, rhs), e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            })
+            .boxed();
+
+        sum
+    })
+}
+
+/// A parser for addition and subtraction operators in the language.
+#[must_use]
+pub fn sum_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    choice((
+        just(Token::Operator("+")).to(lang::BinaryOp::Add),
+        just(Token::Operator("-")).to(lang::BinaryOp::Sub),
+    ))
+}
+
+/// A parser for multiplication and division operators in the language.
+#[must_use]
+pub fn product_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    choice((
+        just(Token::Operator("*")).to(lang::BinaryOp::Mul),
+        just(Token::Operator("/")).to(lang::BinaryOp::Div),
+    ))
+}
+
+/// A parser for boolean literals in the language. Boolean literals are the
+/// keywords `true` and `false`, which represent the two possible values of
+/// the boolean type.
+pub fn bool_value_parser<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    select! {
+        Token::Keyword("true") = e => Spanned::new(
+            ast::Expr {
+                kind: ast::ExprKind::Bool(Spanned::new(true, e.span())),
+                ty: lang::Type::Bool,
             },
             e.span()
-        )
-    };
-
-    // Map the parsed literal to an expression.
-    value.map_with(|lit, e| {
-        Spanned::new(
+        ),
+        Token::Keyword("false") = e => Spanned::new(
             ast::Expr {
-                kind: ast::ExprKind::Literal(lit),
-                ty: lang::Type::Int,
-                _phantom: std::marker::PhantomData,
+                kind: ast::ExprKind::Bool(Spanned::new(false, e.span())),
+                ty: lang::Type::Bool,
             },
-            e.span(),
-        )
-    })
+            e.span()
+        ),
+    }
 }
 
 /// A parser for identifiers in the language. An identifier is a sequence of
 /// characters that represents a name in the language. Identifiers are used to
 /// name variables, functions, classes, etc.
 pub fn ident_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Identifier<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, Spanned<ast::Identifier<'src>>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
@@ -150,11 +241,12 @@ where
 /// `char`... However, user-defined types (e.g. structs, enums, unions...) will not
 /// be handled by this parser.
 pub fn builtin_type_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
     select! {
+        Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
         Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
     }
 }

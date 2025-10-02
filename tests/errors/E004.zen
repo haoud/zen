@@ -1,0 +1,3 @@
+bool main() {
+    return 0;        /// Error 004: Return type mismatch in function 'main'
+}

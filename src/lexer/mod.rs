@@ -71,7 +71,7 @@ impl core::fmt::Display for Token<'_> {
 pub fn lexer<'a>()
 -> impl Parser<'a, &'a str, Vec<Spanned<Token<'a>>>, extra::Err<Rich<'a, char, Span>>> {
     // A simple lexer for parsing keywords.
-    let keyword = choice((just("return"),)).map(Token::Keyword);
+    let keyword = choice((just("return"), just("true"), just("false"))).map(Token::Keyword);
 
     // A lexer for parsing C-style identifiers
     let ident = text::ascii::ident().map(Token::Identifier);
@@ -103,7 +103,9 @@ pub fn lexer<'a>()
     // on the context. To resolve this ambiguity, we must consider longer
     // operators first before shorter operators. To ensure that longer operators
     // will not be consumed as shorter operators.
-    let operator = choice((just("+"),)).to_slice().map(Token::Operator);
+    let operator = choice((just("+"), just("-"), just("*"), just("/")))
+        .to_slice()
+        .map(Token::Operator);
 
     // A lexer for delimiters.
     let delimiter = choice((

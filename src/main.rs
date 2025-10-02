@@ -113,11 +113,12 @@ fn translate(args: &clap::ArgMatches) {
         for e in errors {
             eprintln!("{}", e);
         }
+        return;
     }
 
-    let functions = ast.unwrap();
+    let mut functions = ast.unwrap();
     let mut semantic_analyzer = SemanticAnalysis::new(path);
-    let errors = semantic_analyzer.check_functions(&functions);
+    let errors = semantic_analyzer.check_functions(&mut functions);
 
     // If there were semantic analysis errors, print them and exit early.
     if let Err(errors) = errors {

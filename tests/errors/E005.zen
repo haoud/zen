@@ -1,0 +1,3 @@
+int main() {
+    return 0 + true;        /// Error 005: Type mismatch in binary operation
+}

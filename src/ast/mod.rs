@@ -1,4 +1,4 @@
-use crate::lang::{Span, Spanned, Type};
+use crate::lang::{self, Span, Spanned, Type};
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,
@@ -101,25 +101,34 @@ pub enum StmtKind<'src> {
 #[derive(Debug, Clone, Hash)]
 pub struct Expr<'src> {
     /// The kind of expression.
-    pub kind: ExprKind,
+    pub kind: ExprKind<'src>,
 
     /// The type of the expression.
     pub ty: Type,
-
-    /// A phantom data to tie the lifetime of the expression to the
-    /// source code it was parsed from. This is need for now since
-    /// we don't need it yet because our expressions don't contain
-    /// any references to the source code, but in the future we will
-    /// need it when we add more complex expressions that contain
-    /// references to the source code.
-    pub _phantom: std::marker::PhantomData<&'src ()>,
 }
 
 /// Different kinds of expressions supported by the language.
 #[derive(Debug, Clone, Hash)]
-pub enum ExprKind {
+pub enum ExprKind<'src> {
+    /// A boolean value expression.
+    Bool(Spanned<bool>),
+
     /// A literal value expression.
     Literal(Spanned<Literal>),
+
+    /// A binary operation expression. The first element is the operator, the second
+    /// element is the left-hand side expression, and the third element is the right-hand
+    /// side expression.
+    Binary(
+        lang::BinaryOp,
+        Box<Spanned<Expr<'src>>>,
+        Box<Spanned<Expr<'src>>>,
+    ),
+
+    /// A placeholder expression that is used to avoid the rust compiler telling us that
+    /// the lifetime parameter `'src` is unused. This variant should not be present in future
+    /// versions of the AST.
+    Placeholder(std::marker::PhantomData<&'src ()>),
 
     /// A error expression that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed
