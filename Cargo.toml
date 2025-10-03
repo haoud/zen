@@ -4,6 +4,10 @@ name = "zen"
 version = "0.1.0"
 
 [dependencies]
-ariadne = { version = "0.5", features = ["auto-color"] }
-chumsky = { version = "0.11" }
-clap = { version = "4.5.4", features = ["cargo"] }
+ariadne = {version = "0.5", features = ["auto-color"]}
+chumsky = {version = "0.11"}
+clap = {version = "4.5.4", features = ["cargo"]}
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

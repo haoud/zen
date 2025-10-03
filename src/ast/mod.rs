@@ -73,20 +73,22 @@ pub struct Block<'src> {
 pub struct Stmt<'src> {
     /// The kind of statement.
     pub kind: StmtKind<'src>,
-
-    /// A phantom data to tie the lifetime of the expression to the
-    /// source code it was parsed from. This is need for now since
-    /// we don't need it yet because our expressions don't contain
-    /// any references to the source code, but in the future we will
-    /// need it when we add more complex expressions that contain
-    /// references to the source code.
-    pub _phantom: std::marker::PhantomData<&'src ()>,
 }
 
+/// Different kinds of statements supported by the language.
 #[derive(Debug, Clone, Hash)]
 pub enum StmtKind<'src> {
     /// A return statement. The element is the expression that is returned.
     Return(Box<Spanned<Expr<'src>>>),
+
+    /// A let statement. The first element is the identifier being bound, the second
+    /// element is the optional type annotation, and the third element is the expression
+    /// being assigned to the identifier.
+    Let(
+        Spanned<Identifier<'src>>,
+        Spanned<Type>,
+        Box<Spanned<Expr<'src>>>,
+    ),
 
     /// A error statement that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed
@@ -110,28 +112,24 @@ pub struct Expr<'src> {
 /// Different kinds of expressions supported by the language.
 #[derive(Debug, Clone, Hash)]
 pub enum ExprKind<'src> {
-    /// A boolean value expression.
+    /// A boolean value.
     Bool(Spanned<bool>),
 
-    /// A literal value expression.
+    /// A literal value.
     Literal(Spanned<Literal>),
 
-    /// A binary operation expression. The first element is the operator, the second
-    /// element is the left-hand side expression, and the third element is the right-hand
-    /// side expression.
+    /// A binary operation. The first element is the operator, the second element is the left-hand
+    /// side expression, and the third element is the right-hand side expression.
     Binary(
         lang::BinaryOp,
         Box<Spanned<Expr<'src>>>,
         Box<Spanned<Expr<'src>>>,
     ),
 
-    /// A placeholder expression that is used to avoid the rust compiler telling us that
-    /// the lifetime parameter `'src` is unused. This variant should not be present in future
-    /// versions of the AST.
-    Placeholder(std::marker::PhantomData<&'src ()>),
+    /// An identifier. The element is the identifier being referenced.
+    Identifier(Spanned<Identifier<'src>>),
 
-    /// A error expression that is used to indicate a parsing error. This
-    /// variant should not be present in the final AST that will be passed
-    /// to the code generator.
+    /// A error that is used to indicate a parsing error. This variant should not be present
+    /// in the final AST that will be passed to the code generator.
     Error(Span),
 }

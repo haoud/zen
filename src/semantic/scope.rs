@@ -1,11 +1,11 @@
-use ariadne::{Color, ReportKind};
-
 use crate::{
     ast,
-    lang::{Span, Spanned},
-    semantic::SemanticError,
+    lang::Spanned,
+    semantic::{
+        error::SemanticDiagnostic,
+        symbol::{self, SymbolTable},
+    },
 };
-use std::collections::HashMap;
 
 /// The scope stack for managing variable and function declarations.
 #[derive(Debug, Clone)]
@@ -22,7 +22,9 @@ impl<'src> Scope<'src> {
         }
     }
 
-    /// Enter a new local scope.
+    /// Enter a new local scope. This will push a new scope context onto the scope stack, which
+    /// will be used for any new variable or function declarations until the scope is exited
+    /// with [`exit_scope`].
     pub fn enter_scope(&mut self) {
         self.scopes.push(ScopeCtx::empty());
     }
@@ -51,8 +53,11 @@ impl<'src> Scope<'src> {
         result
     }
 
-    /// Get a mutable reference to the global scope. Since the global scope is always present,
-    /// this function will never panic.
+    /// Get a mutable reference to the global scope.
+    ///
+    /// # Panics
+    /// This function should never panic since the global scope is always present, and it is
+    /// ensured by functions that manipulate the scope stack.
     #[must_use]
     pub fn global_scope_mut(&mut self) -> &mut ScopeCtx<'src> {
         &mut self.scopes[0]
@@ -60,6 +65,10 @@ impl<'src> Scope<'src> {
 
     /// Get a reference to the global scope. Since the global scope is always present, this
     /// function will never panic.
+    ///
+    /// # Panics
+    /// This function should never panic since the global scope is always present, and it is
+    /// ensured by functions that manipulate the scope stack.
     #[must_use]
     pub fn global_scope(&self) -> &ScopeCtx<'src> {
         &self.scopes[0]
@@ -67,6 +76,10 @@ impl<'src> Scope<'src> {
 
     /// Get a reference to the current scope. If there are no local scopes, this will return
     /// the global scope.
+    ///
+    /// # Panics
+    /// This function should never panic since at least the global scope is always present, and
+    /// it is ensured by functions that manipulate the scope stack.
     #[must_use]
     pub fn current_scope(&self) -> &ScopeCtx<'src> {
         self.scopes.last().unwrap()
@@ -74,6 +87,10 @@ impl<'src> Scope<'src> {
 
     /// Get a mutable reference to the current scope. If there are no local scopes, this will
     /// return the global scope.
+    ///
+    /// # Panics
+    /// This function should never panic since at least the global scope is always present, and
+    /// it is ensured by functions that manipulate the scope stack.
     #[must_use]
     pub fn current_scope_mut(&mut self) -> &mut ScopeCtx<'src> {
         self.scopes.last_mut().unwrap()
@@ -81,66 +98,87 @@ impl<'src> Scope<'src> {
 
     /// Check if a function with the given identifier exists in the current scope.
     #[must_use]
-    pub fn function_exists(&self, ident: &ast::Identifier<'src>) -> bool {
+    pub fn function_exists(&self, ident: &str) -> bool {
         self.scopes
             .iter()
             .rev()
-            .any(|scope| scope.function_exists(ident))
+            .any(|scope| scope.symbols().function_exists(ident))
+    }
+
+    /// Check if a variable with the given identifier exists in the current scope.
+    #[must_use]
+    pub fn variable_exists(&self, ident: &str) -> bool {
+        self.scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.symbols().variable_exists(ident))
+    }
+
+    /// Get a function with the given identifier from any scope in the stack.
+    #[must_use]
+    pub fn get_function(&self, ident: &str) -> Option<&Spanned<symbol::Function<'src>>> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.symbols().get_function(ident))
+    }
+
+    /// Get a variable with the given identifier from any scope in the stack.
+    #[must_use]
+    pub fn get_variable(&self, ident: &str) -> Option<&Spanned<symbol::Variable<'src>>> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.symbols().get_variable(ident))
     }
 
     /// Insert a function into the current scope. Because shadowing is not allowed for functions,
     /// this will check all parent scopes to ensure no function with the same identifier exists.
     ///
     /// # Error
-    /// If a function with the same identifier already exists in the current scope, returns an error
-    /// describing the conflict.
+    /// If a function with the same identifier already exists, an error will be added to the
+    /// semantic analysis context.
     pub fn insert_function(
         &mut self,
-        file_name: &'src str,
+        errors: &mut SemanticDiagnostic<'src>,
         func: &Spanned<ast::Function<'src>>,
-    ) -> Result<(), SemanticError<'src>> {
-        if self.function_exists(&func.0.prototype.0.ident) {
-            let previous_span = self
-                .scopes
-                .iter()
-                .rev()
-                .find_map(|scope| {
-                    if scope.function_exists(&func.0.prototype.0.ident) {
-                        scope.functions.get(&func.0.prototype.0.ident.0)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-
-            let report = ariadne::Report::build(
-                ReportKind::Error,
-                (file_name, func.prototype.span().into_range()),
-            )
-            .with_code(1)
-            .with_message(format!(
-                "the '{}' function is defined multiple times",
-                func.0.prototype.0.ident.name
-            ))
-            .with_label(
-                ariadne::Label::new((file_name, func.span().into_range()))
-                    .with_message(format!(
-                        "function '{}' redefined here",
-                        func.0.prototype.0.ident.name
-                    ))
-                    .with_color(Color::Red),
-            )
-            .with_label(
-                ariadne::Label::new((file_name, previous_span.into_range()))
-                    .with_message("previous definition here")
-                    .with_color(Color::Cyan),
-            )
-            .finish();
-
-            Err(report)
+    ) {
+        if let Some(function) = self.get_function(func.0.prototype.ident.name) {
+            errors.emit_function_redefinition_error(
+                &func.0.prototype,
+                function.span(),
+                func.span(),
+            );
         } else {
-            self.current_scope_mut().insert_function(func);
-            Ok(())
+            self.current_scope_mut()
+                .symbols_mut()
+                .insert_function(Spanned::new(
+                    symbol::Function {
+                        name: func.0.prototype.ident.name,
+                        ret: func.0.prototype.ret.0,
+                    },
+                    func.span(),
+                ));
+        }
+    }
+
+    /// Insert a variable into the current scope. Because shadowing is not allowed for variables,
+    /// this will check all parent scopes to ensure no variable with the same identifier exists.
+    ///
+    /// # Error
+    /// If a variable with the same identifier already exists, an error will be added to the
+    /// semantic analysis context.
+    pub fn insert_variable(
+        &mut self,
+        errors: &mut SemanticDiagnostic<'src>,
+        variable: Spanned<symbol::Variable<'src>>,
+    ) {
+        if let Some(variable) = self.get_variable(variable.name) {
+            errors.emit_variable_redefinition_error(variable, variable.span());
+        } else {
+            self.current_scope_mut()
+                .symbols_mut()
+                .insert_variable(variable);
         }
     }
 }
@@ -148,7 +186,7 @@ impl<'src> Scope<'src> {
 /// Represents a single scope context, containing function declarations.
 #[derive(Debug, Clone)]
 pub struct ScopeCtx<'src> {
-    functions: HashMap<ast::Identifier<'src>, Span>,
+    symbols: SymbolTable<'src>,
 }
 
 impl<'src> ScopeCtx<'src> {
@@ -156,33 +194,25 @@ impl<'src> ScopeCtx<'src> {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            functions: HashMap::new(),
+            symbols: SymbolTable::new(),
         }
     }
 
-    /// Check if a function with the given identifier exists in the current scope.
+    /// Get a reference to the symbol table.
     #[must_use]
-    pub fn function_exists(&self, ident: &ast::Identifier<'src>) -> bool {
-        self.functions.contains_key(ident)
+    pub fn symbols(&self) -> &SymbolTable<'src> {
+        &self.symbols
     }
 
-    /// Insert a function into the current scope.
-    ///
-    /// # Panics
-    /// This function will panic if a function with the same identifier already exists in the
-    /// current scope. This should never happen if the `Scope` methods are used correctly.
-    pub fn insert_function(&mut self, func: &Spanned<ast::Function<'src>>) {
-        assert!(
-            !self.function_exists(&func.0.prototype.0.ident),
-            "Function {} already exists in the current scope",
-            func.0.prototype.0.ident.name
-        );
+    /// Get a mutable reference to the symbol table.
+    #[must_use]
+    pub fn symbols_mut(&mut self) -> &mut SymbolTable<'src> {
+        &mut self.symbols
+    }
+}
 
-        // PERF: Cloning here is ideal since identifiers are simply references to the source
-        // code annd using references in the hash map would require a more complex lifetime
-        // management strategy in addition to probably degrading performance due to the added
-        // indirection.
-        self.functions
-            .insert(func.0.prototype.0.ident.0.clone(), func.span());
+impl Default for Scope<'_> {
+    fn default() -> Self {
+        Self::new()
     }
 }

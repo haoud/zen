@@ -13,6 +13,7 @@ type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, Span>>;
 /// consists of a list of function definitions, but more top-level constructs can be
 /// added in the future, like global variable declarations, struct definitions, enum
 /// definitions...
+#[must_use]
 pub fn file_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Vec<Spanned<ast::Function<'src>>>, ParserError<'tokens, 'src>>
 where
@@ -24,6 +25,7 @@ where
 /// A parser for function definitions in the language. A function definition consists of a return
 /// type, a name, a list of parameters (currently empty since parameters are not yet supported) and
 /// a body (a list of statements).
+#[must_use]
 pub fn func_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Function<'src>>, ParserError<'tokens, 'src>>
 where
@@ -60,6 +62,7 @@ where
 /// A parser for blocks of statements in the language. A block is a sequence of statements
 /// enclosed in curly braces `{}`. Blocks are used in function bodies, conditional statements,
 /// and loops, but can also be used anywhere a single statement is expected.
+#[must_use]
 pub fn block_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, ast::Block<'src>, ParserError<'tokens, 'src>>
 where
@@ -78,6 +81,7 @@ where
 /// A parser for statements in the language. Currently, the only statement that is supported
 /// is a `return` statement, but more statements can be added in the future, like variable
 /// declarations, variable assignments, if statements, while loops...
+#[must_use]
 pub fn stmt_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Stmt<'src>>, ParserError<'tokens, 'src>>
 where
@@ -91,18 +95,38 @@ where
             Spanned::new(
                 ast::Stmt {
                     kind: ast::StmtKind::Return(Box::new(expr)),
-                    _phantom: std::marker::PhantomData,
                 },
                 e.span(),
             )
         });
 
-    return_expr
+    let let_expr = just(Token::Keyword("let"))
+        .ignore_then(ident_parser())
+        .then_ignore(just(Token::Delimiter(":")))
+        .then(builtin_type_parser().or_not())
+        .then_ignore(just(Token::Operator("=")))
+        .then(expr_parser())
+        .then_ignore(just(Token::Delimiter(";")))
+        .map_with(|((ident, ty), expr), e| {
+            Spanned::new(
+                ast::Stmt {
+                    kind: ast::StmtKind::Let(
+                        ident,
+                        ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                        Box::new(expr),
+                    ),
+                },
+                e.span(),
+            )
+        });
+
+    choice((return_expr, let_expr)).boxed()
 }
 
 /// A parser for expressions in the language. Currently, the only expression that is supported
 /// is a number literal, but more expressions can be added in the future, like binary expressions,
 /// unary expressions, function calls...
+#[must_use]
 pub fn expr_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>>
 where
@@ -133,6 +157,15 @@ where
                     e.span(),
                 )
             })
+            .or(ident_parser().map_with(|ident, e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::Identifier(ident),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            }))
             .or(bool_value_parser())
             .or(expr.delimited_by(just(Token::Delimiter("(")), just(Token::Delimiter(")"))))
             .boxed();
@@ -200,6 +233,7 @@ where
 /// A parser for boolean literals in the language. Boolean literals are the
 /// keywords `true` and `false`, which represent the two possible values of
 /// the boolean type.
+#[must_use]
 pub fn bool_value_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>> + Clone
 where
@@ -226,6 +260,7 @@ where
 /// A parser for identifiers in the language. An identifier is a sequence of
 /// characters that represents a name in the language. Identifiers are used to
 /// name variables, functions, classes, etc.
+#[must_use]
 pub fn ident_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Identifier<'src>>, ParserError<'tokens, 'src>> + Clone
 where
@@ -240,6 +275,7 @@ where
 /// type is `int`, but more types can be added in the future, like `float`, 'bool',
 /// `char`... However, user-defined types (e.g. structs, enums, unions...) will not
 /// be handled by this parser.
+#[must_use]
 pub fn builtin_type_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>> + Clone
 where

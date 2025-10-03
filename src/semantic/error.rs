@@ -1,0 +1,326 @@
+//! This module defines the different kinds of semantic errors that can occur during
+//! semantic analysis, as well as a structure to collect and report these errors and
+//! helpers functions to emit specific errors easily with proper formatting without
+//! duplicating code and without having big error handling code in the semantic analyzer
+//! code itself.
+use ariadne::{Color, ReportKind};
+
+use crate::{
+    ast,
+    lang::{self, Spanned},
+    semantic::{SemanticError, symbol},
+};
+
+/// The different kinds of semantic errors that can occur during semantic analysis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum SemanticErrorKind {
+    /// Redefinition of a function with the same name (Zen does not support function overloading).
+    FunctionRedefinition = 1,
+
+    /// Code that is determined to be unreachable, such as statements after a return.
+    UnreachableCode = 2,
+
+    /// All control paths in a function do not return a value when the function is expected
+    /// to return a value.
+    MissingReturn = 3,
+
+    /// The type of a return statement does not match the function's declared return type.
+    ReturnTypeMismatch = 4,
+
+    /// The types of the operands in a binary operation do not match and does not coerce.
+    BinaryOpTypeMismatch = 5,
+
+    /// Attempted to perform arithmetic on boolean values (like who does that ?).
+    BooleanArithmetic = 6,
+
+    /// Use of an undefined variable.
+    UndefinedVariable = 7,
+
+    /// Redefinition of a variable with the same name (shadowing must be explicit in Zen).
+    VariableRedefinition = 8,
+
+    /// The type of a variable definition does not match the variable's declared type.
+    VariableDefinitionTypeMismatch = 9,
+}
+
+/// A collection of semantic errors that can be emitted during semantic analysis.
+#[derive(Debug)]
+pub struct SemanticDiagnostic<'src> {
+    /// The source filename where the errors were found, used for reporting nice error
+    /// messages to the user.
+    pub filename: &'src str,
+
+    /// The collected semantic errors.
+    pub errors: Vec<SemanticError<'src>>,
+}
+
+impl<'src> SemanticDiagnostic<'src> {
+    /// Create a new `SemanticDiagnostic` with the given source filename and an empty list
+    /// of errors.
+    #[must_use]
+    pub fn new(filename: &'src str) -> Self {
+        Self {
+            filename,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Consume the `SemanticDiagnostic`, returning the collected errors.
+    #[must_use]
+    pub fn collect(self) -> Vec<SemanticError<'src>> {
+        self.errors
+    }
+
+    /// Emit a function redefinition error, given the function prototype, the original span
+    /// where it was defined, and the new span where it is being redefined.
+    #[inline]
+    pub fn emit_function_redefinition_error(
+        &mut self,
+        proto: &ast::FunctionPrototype<'src>,
+        og_span: lang::Span,
+        fn_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
+                .with_code(SemanticErrorKind::FunctionRedefinition as u32)
+                .with_message(format!(
+                    "the '{}' function is defined multiple times",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, fn_span.into_range()))
+                        .with_message(format!("function '{}' redefined here", proto.ident.name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, og_span.into_range()))
+                        .with_message("previous definition here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an unreachable code error, given the span of the return statement that makes
+    /// the code unreachable, and the span of the unreachable code itself.
+    #[inline]
+    pub fn emit_unreachable_code_error(&mut self, ret_span: lang::Span, code_span: lang::Span) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, code_span.into_range()))
+                .with_code(SemanticErrorKind::UnreachableCode as u32)
+                .with_message("unreachable code after return statement")
+                .with_label(
+                    ariadne::Label::new((self.filename, ret_span.into_range()))
+                        .with_message("Any code following this return statement is unreachable")
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, code_span.into_range()))
+                        .with_message("This code will never be executed")
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a missing return error, given the function prototype and the span of the function.
+    #[inline]
+    pub fn emit_missing_return_error(
+        &mut self,
+        proto: &ast::FunctionPrototype<'src>,
+        fn_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
+                .with_code(SemanticErrorKind::MissingReturn as u32)
+                .with_message(format!(
+                    "function '{}' does not have a return statement",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, proto.ret.span().into_range()))
+                        .with_message(format!(
+                            "A return statement of type '{}' is required",
+                            proto.ret.0
+                        ))
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a return type mismatch error, given the function prototype, the span of the
+    /// return statement, and the actual type of the return statement.
+    #[inline]
+    pub fn emit_return_type_mismatch_error(
+        &mut self,
+        proto: &ast::FunctionPrototype<'src>,
+        ret_span: lang::Span,
+        ret_type: lang::Type,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, ret_span.into_range()))
+                .with_code(SemanticErrorKind::ReturnTypeMismatch as u32)
+                .with_message(format!(
+                    "return type mismatch: expected '{}', found '{ret_type}'",
+                    proto.ret.0
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, proto.ret.span().into_range()))
+                        .with_message(format!("Expected return type '{}'", proto.ret.0))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, ret_span.into_range()))
+                        .with_message(format!("Found return type '{ret_type}'"))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a binary operation type mismatch error, given the binary operator, the left-hand
+    /// side expression, the right-hand side expression, and the span of the binary operation.
+    #[inline]
+    pub fn emit_binary_op_type_mismatch_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::BinaryOpTypeMismatch as u32)
+                .with_message(format!(
+                    "type mismatch in binary operation '{op}': left is '{}', right is '{}'",
+                    lhs.ty, rhs.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, lhs.span().into_range()))
+                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, rhs.span().into_range()))
+                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a boolean arithmetic error, given the binary operator, the left-hand side
+    /// expression, the right-hand side expression, and the span of the binary operation.
+    #[inline]
+    pub fn emit_boolean_arithmetic_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        let mut report =
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::BooleanArithmetic as u32)
+                .with_message(format!(
+                    "boolean values cannot be used in arithmetic operation '{op}'"
+                ));
+
+        // Add a specific label if the left operand is a boolean.
+        if lhs.ty == lang::Type::Bool {
+            report = report.with_label(
+                ariadne::Label::new((self.filename, lhs.span().into_range()))
+                    .with_message("Left operand type is boolean")
+                    .with_color(Color::Cyan),
+            );
+        }
+
+        // Add a specific label if the right operand is a boolean.
+        if rhs.ty == lang::Type::Bool {
+            report = report.with_label(
+                ariadne::Label::new((self.filename, rhs.span().into_range()))
+                    .with_message("Right operand type is boolean")
+                    .with_color(Color::Red),
+            );
+        }
+
+        self.errors.push(report.finish());
+    }
+
+    /// Emit an undefined variable error, given the spanned identifier of the variable.
+    #[inline]
+    pub fn emit_undefined_variable_error(&mut self, identifier: &Spanned<ast::Identifier<'src>>) {
+        let span = identifier.span();
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::UndefinedVariable as u32)
+                .with_message(format!("undeclared identifier '{}'", identifier.name))
+                .with_label(
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!(
+                            "'{}' is not declared in this scope",
+                            identifier.name
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a variable redefinition error, given the spanned identifier of the variable
+    /// and the previous span where it was defined.
+    #[inline]
+    pub fn emit_variable_redefinition_error(
+        &mut self,
+        variable: &Spanned<symbol::Variable<'src>>,
+        previous_span: lang::Span,
+    ) {
+        let span = variable.span();
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::VariableRedefinition as u32)
+                .with_message(format!("redeclaration of variable '{}'", variable.name))
+                .with_label(
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!("variable '{}' redeclared here", variable.name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, previous_span.into_range()))
+                        .with_message("previous declaration here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    #[inline]
+    pub fn emit_variable_definition_type_mismatch_error(
+        &mut self,
+        expr: &Spanned<ast::Expr<'src>>,
+        ty: &Spanned<lang::Type>,
+        stmt_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
+                .with_code(SemanticErrorKind::VariableDefinitionTypeMismatch as u32)
+                .with_message(format!(
+                    "type mismatch in let statement: expected '{}', found '{}'",
+                    ty.0, expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, ty.span().into_range()))
+                        .with_message(format!("Expected type '{}'", ty.0))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Found type '{}'", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+}

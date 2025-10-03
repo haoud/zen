@@ -18,6 +18,11 @@ impl<T> Spanned<T> {
         Self(item, span)
     }
 
+    #[must_use]
+    pub fn none(item: T) -> Self {
+        Self(item, Span::from(0..0))
+    }
+
     /// Get a reference to the inner item.
     #[must_use]
     pub fn inner(&self) -> &T {
@@ -53,7 +58,7 @@ impl<T> DerefMut for Spanned<T> {
 
 impl<T: Clone> Clone for Spanned<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
+        Self(self.0.clone(), self.1)
     }
 }
 

@@ -1,0 +1,5 @@
+int main() {
+    let a := 4;
+    let a := 6;     // E008: Variable 'a' is redeclared
+    return a;
+}

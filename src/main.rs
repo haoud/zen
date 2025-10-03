@@ -10,6 +10,16 @@ pub mod lexer;
 pub mod parser;
 pub mod semantic;
 
+// Parsing:
+// - [x] Variable declarations
+// - [x] Variable in binary operations
+// Semantic Analysis:
+// - [x] Add symbol table support for variables
+// - [x] Simple type inference for variable declarations if no type is provided
+// - [x] Type checking for variable assignments and usage
+// Codegen:
+// - [x] Update codegen to handle parser changes
+
 fn main() {
     let matches = clap::command!("zen")
         .about("Zen programming language compiler")
@@ -76,14 +86,14 @@ fn translate(args: &clap::ArgMatches) {
     if args.get_flag("dump-tokens") {
         println!("Tokens:");
         for token in tokens.as_ref().unwrap_or(&vec![]) {
-            println!(" - {:?}", token);
+            println!(" - {token:?}");
         }
     }
 
     // If there were lexer errors, print them and exit early.
     if !errors.is_empty() {
         for e in errors {
-            eprintln!("{}", e);
+            eprintln!("{e}");
         }
         return;
     }
@@ -105,23 +115,23 @@ fn translate(args: &clap::ArgMatches) {
     if args.get_flag("dump-ast") {
         println!("AST:");
         if let Some(node) = &ast {
-            println!("{:#?}", node);
+            println!("{node:#?}");
         }
     }
 
     if !errors.is_empty() {
         for e in errors {
-            eprintln!("{}", e);
+            eprintln!("{e}");
         }
         return;
     }
 
     let mut functions = ast.unwrap();
     let mut semantic_analyzer = SemanticAnalysis::new(path);
-    let errors = semantic_analyzer.check_functions(&mut functions);
+    semantic_analyzer.check_functions(&mut functions);
 
     // If there were semantic analysis errors, print them and exit early.
-    if let Err(errors) = errors {
+    if let Err(errors) = semantic_analyzer.finalize() {
         for e in errors {
             e.eprint((path.as_str(), &source)).unwrap();
         }

@@ -1,0 +1,3 @@
+int main() {
+    return nowhere_to_be_found;     /// Error 007: Variable 'nowhere_to_be_found' is not defined
+}

@@ -31,6 +31,11 @@ impl Codegen {
 
     /// Return the global scope object. This is the scope with depth 0, where all the
     /// global variables and functions are defined.
+    ///
+    /// # Panics
+    /// This function should never panic since the global scope should always be present, and
+    /// functions that manipulate the scope stack ensure that at least the global scope is always
+    /// present.
     #[must_use]
     pub fn global_scope(&self) -> &Scope {
         self.scopes.first().unwrap()
@@ -39,6 +44,11 @@ impl Codegen {
     /// Return the current scope object. This is the scope at the top of the scope stack,
     /// where the current variables and functions are defined. If there is no local scope,
     /// this will return the global scope instead.
+    ///
+    /// # Panics
+    /// This function should never panic since the scope stack should always contain at least
+    /// the global scope, and functions that manipulate the scope stack ensure that at least
+    /// the global scope is always present.
     #[must_use]
     pub fn current_scope(&self) -> &Scope {
         self.scopes.last().unwrap()
@@ -109,13 +119,13 @@ impl Codegen {
     pub fn generate_fn_header(&mut self, func: &ast::Function, prototype: bool) {
         // Generate the function return type and name
         self.code += "int ";
-        self.code += &func.prototype.ident.name;
+        self.code += func.prototype.ident.name;
         self.code += "(";
 
         // If this is a prototype, we need to add a semicolon at the
         // end of the function declaration.
         if prototype {
-            self.code += ");\n"
+            self.code += ");\n";
         } else {
             self.code += ")\n";
         }
@@ -145,6 +155,11 @@ impl Codegen {
             ast::StmtKind::Return(expr) => {
                 format!("return {};", self.generate_expr(expr))
             }
+            ast::StmtKind::Let(ident, ty, expr) => {
+                let ctype = self.generate_type(ty);
+                let value = self.generate_expr(expr);
+                format!("{ctype} {ident} = {value};", ident = ident.name)
+            }
             ast::StmtKind::Error(..) => unreachable!(),
         }
     }
@@ -154,6 +169,7 @@ impl Codegen {
     #[must_use]
     pub fn generate_expr(&mut self, expr: &ast::Expr) -> String {
         match &expr.kind {
+            ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
             ast::ExprKind::Bool(b) => {
                 if b.0 {
@@ -166,9 +182,8 @@ impl Codegen {
                 let lexpr = self.generate_expr(lhs);
                 let rexpr = self.generate_expr(rhs);
                 let op = op.as_str();
-                format!("({} {} {})", lexpr, op, rexpr)
+                format!("({lexpr} {op} {rexpr})")
             }
-            ast::ExprKind::Placeholder(_) => unreachable!(),
             ast::ExprKind::Error(..) => unreachable!(),
         }
     }
@@ -196,11 +211,17 @@ impl Codegen {
     }
 }
 
+impl Default for Codegen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Generate the C code for the given list of functions. This function will create a new
 /// code generator, generate the function prototypes and bodies, and return the generated
 /// C code as a string.
 #[must_use]
-pub fn generate<'src>(funcs: &[Spanned<ast::Function>]) -> String {
+pub fn generate(funcs: &[Spanned<ast::Function>]) -> String {
     let mut codegen = Codegen::new();
     codegen.generate_comment_header();
     codegen.generate_includes();

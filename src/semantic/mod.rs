@@ -1,26 +1,27 @@
-use ariadne::{Color, Report, ReportKind};
 use chumsky::span::Span;
 
 use crate::{
     ast,
     lang::{self, Spanned},
+    semantic::error::SemanticDiagnostic,
 };
 
-pub mod infer;
+pub mod error;
 pub mod scope;
+pub mod symbol;
 
-pub type SemanticNote<'src> = Report<'src, (&'src str, std::ops::Range<usize>)>;
-pub type SemanticWarning<'src> = Report<'src, (&'src str, std::ops::Range<usize>)>;
-pub type SemanticError<'src> = Report<'src, (&'src str, std::ops::Range<usize>)>;
+pub type SemanticNote<'src> = ariadne::Report<'src, (&'src str, std::ops::Range<usize>)>;
+pub type SemanticWarning<'src> = ariadne::Report<'src, (&'src str, std::ops::Range<usize>)>;
+pub type SemanticError<'src> = ariadne::Report<'src, (&'src str, std::ops::Range<usize>)>;
 
 /// Represents the semantic analysis context, including scopes and symbol tables.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SemanticAnalysis<'src> {
-    /// The name of the source file being analyzed.
-    filename: &'src str,
-
     /// The scope stack for managing variable and function declarations.
-    scope: scope::Scope<'src>,
+    scopes: scope::Scope<'src>,
+
+    /// A collection of semantic errors encountered during analysis.
+    errors: SemanticDiagnostic<'src>,
 }
 
 impl<'src> SemanticAnalysis<'src> {
@@ -28,121 +29,74 @@ impl<'src> SemanticAnalysis<'src> {
     #[must_use]
     pub fn new(filename: &'src str) -> Self {
         Self {
-            scope: scope::Scope::new(),
-            filename,
+            errors: SemanticDiagnostic::new(filename),
+            scopes: scope::Scope::new(),
         }
     }
 
     /// Perform semantic analysis on the given list of functions.
-    pub fn check_functions(
-        &mut self,
-        funcs: &mut [Spanned<ast::Function<'src>>],
-    ) -> Result<(), Vec<SemanticError<'src>>> {
-        let mut errors = Vec::new();
-
+    pub fn check_functions(&mut self, funcs: &mut [Spanned<ast::Function<'src>>]) {
         // Verify that each function has a unique name.
         for function in funcs.iter() {
-            if let Err(err) = self.scope.insert_function(self.filename, function) {
-                errors.push(err);
-            }
-        }
-
-        // Perform type inference on the functions.
-        if let Err(mut infer_errors) = infer::infer_types(funcs) {
-            errors.append(&mut infer_errors);
+            self.scopes.insert_function(&mut self.errors, function);
         }
 
         // Check each function's body for semantic correctness.
         for function in funcs {
-            if let Err(mut func_errors) = self.check_statements(function, &function.body) {
-                errors.append(&mut func_errors);
-            }
-        }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
+            let span = function.span();
+            self.check_statements(&mut function.0.prototype, &mut function.0.body, span);
         }
     }
 
     /// Check the statements within a function for semantic correctness.
     pub fn check_statements(
         &mut self,
-        func: &Spanned<ast::Function<'src>>,
-        stmts: &[Spanned<ast::Stmt<'src>>],
-    ) -> Result<(), Vec<SemanticError<'src>>> {
-        let mut base_ret_stmt: Option<&Spanned<ast::Stmt<'src>>> = None;
-        let mut errors = Vec::new();
+        proto: &mut Spanned<ast::FunctionPrototype<'src>>,
+        stmts: &mut [Spanned<ast::Stmt<'src>>],
+        span: lang::Span,
+    ) {
+        let mut base_ret_stmt_span: Option<lang::Span> = None;
 
-        for stmt in stmts {
-            if let Some(ret_stmt) = base_ret_stmt {
-                let start = stmt.span().start();
-                let end = stmts.last().unwrap().span().end();
-                let report = ariadne::Report::build(ReportKind::Error, (self.filename, start..end))
-                    .with_code(2)
-                    .with_message("unreachable code after return statement")
-                    .with_label(
-                        ariadne::Label::new((self.filename, ret_stmt.span().into_range()))
-                            .with_message("Any code following this return statement is unreachable")
-                            .with_color(Color::Cyan),
-                    )
-                    .with_label(
-                        ariadne::Label::new((self.filename, start..end))
-                            .with_message("This code will never be executed")
-                            .with_color(Color::Red),
-                    )
-                    .finish();
+        for stmt in stmts.iter_mut() {
+            // Infer the type of the statement and its contents, as it may affect
+            // subsequent checks.
+            self.infer_stmt(stmt);
 
-                // No need to continue checking after finding unreachable code
-                errors.push(report);
+            // If we have already encountered a return statement, any subsequent code
+            // is unreachable and should be reported as an error.
+            if let Some(span) = base_ret_stmt_span {
+                self.errors.emit_unreachable_code_error(span, stmt.span());
                 break;
             }
 
-            match &stmt.0.kind {
+            let stmt_span = stmt.span();
+            match &mut stmt.0.kind {
                 ast::StmtKind::Return(expr) => {
+                    // FIXME: Proper escape analysis to ensure all paths return a value, instead of
+                    // this simple check that does only work because we don't have any control flow
+                    // yet.
+
                     // Check the expression being returned for semantic correctness. If there are
                     // errors, collect them, but still proceed to check the return type.
-                    match self.check_expr(expr) {
-                        Ok(()) => {}
-                        Err(mut expr_errors) => errors.append(&mut expr_errors),
-                    }
-
-                    base_ret_stmt = Some(stmt);
+                    self.check_expr(expr);
+                    base_ret_stmt_span = Some(stmt_span);
 
                     // Check that the return type matches the function's declared return type. If
                     // not, report an error. However, if the expression's type is `Unknown`, we
                     // skip this check to avoid cascading errors because the type inference was
-                    // unable to determine the type and we cannot check it against the function's
-                    // return type.
-                    if expr.ty != func.prototype.ret.0 && expr.ty != lang::Type::Unknown {
-                        let report = ariadne::Report::build(
-                            ReportKind::Error,
-                            (self.filename, stmt.span().into_range()),
-                        )
-                        .with_code(4)
-                        .with_message(format!(
-                            "return type mismatch: expected '{}', found '{}'",
-                            func.prototype.ret.0, expr.ty
-                        ))
-                        .with_label(
-                            ariadne::Label::new((
-                                self.filename,
-                                func.prototype.ret.span().into_range(),
-                            ))
-                            .with_message(format!(
-                                "Expected return type '{}'",
-                                func.prototype.ret.0
-                            ))
-                            .with_color(Color::Cyan),
-                        )
-                        .with_label(
-                            ariadne::Label::new((self.filename, stmt.span().into_range()))
-                                .with_message(format!("Found return type '{}'", expr.ty))
-                                .with_color(Color::Red),
-                        )
-                        .finish();
-                        errors.push(report);
+                    // unable to determine the type of the returned expression.
+                    if expr.ty != proto.ret.0 && expr.ty != lang::Type::Unknown {
+                        self.errors
+                            .emit_return_type_mismatch_error(proto, stmt_span, expr.ty);
+                    }
+                }
+                ast::StmtKind::Let(_, ty, expr) => {
+                    // Verify that the expression type matches the declared type if provided. If no
+                    // type is provided, it should have been inferred during the type inference step
+                    // that should have happened before this semantic check.
+                    if expr.ty != ty.0 {
+                        self.errors
+                            .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
                 }
                 ast::StmtKind::Error(_) => unreachable!(),
@@ -150,131 +104,118 @@ impl<'src> SemanticAnalysis<'src> {
         }
 
         // Ensure that non-void functions have at least one return statement.
-        if base_ret_stmt.is_none() {
-            let start = func
-                .body
-                .first()
-                .map_or(func.span().start(), |s| s.span().start());
-            let end = func
-                .body
-                .last()
-                .map_or(func.span().end(), |s| s.span().end());
-
-            let report = ariadne::Report::build(ReportKind::Error, (self.filename, start..end))
-                .with_code(3)
-                .with_message(format!(
-                    "function '{}' does not have a return statement",
-                    func.prototype.ident.name
-                ))
-                .with_label(
-                    ariadne::Label::new((self.filename, func.prototype.ret.span().into_range()))
-                        .with_message(format!(
-                            "A return statement of type '{}' is required",
-                            func.prototype.ret.0
-                        ))
-                        .with_color(Color::Cyan),
-                )
-                .finish();
-            errors.push(report);
-        }
-        // TODO: Verify that the return statements match the function's return type.
-        // TODO: If the return statement is missing, ensure the function returns void.
-        // TODO: If the return statement is present, ensure the function does not return void.
-        // TODO: Ensure that no statements exist after a return statement within the same block.
-        // TODO: If a return statement is present in deeper scopes, ensure that the function
-        // still returns a value on all paths. Also, if all paths return (exemple, if-else with
-        // return in both branches), then no need for a return statement at the end of the
-        // function.
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
+        if base_ret_stmt_span.is_none() {
+            let start = stmts.first().map_or(span.start(), |s| s.span().start());
+            let end = stmts.last().map_or(span.end(), |s| s.span().end());
+            let fn_span = lang::Span::from(start..end);
+            self.errors.emit_missing_return_error(proto, fn_span);
         }
     }
 
     /// Check an expression for semantic correctness, returning any errors found.
-    pub fn check_expr(
-        &mut self,
-        expr: &Spanned<ast::Expr<'src>>,
-    ) -> Result<(), Vec<SemanticError<'src>>> {
-        let mut errors = Vec::new();
+    pub fn check_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
+        let span = expr.span();
 
-        match &expr.kind {
+        self.infer_expr(expr);
+        match &mut expr.kind {
             ast::ExprKind::Bool(_) => (),
             ast::ExprKind::Literal(_) => (),
+            ast::ExprKind::Identifier(_) => (),
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 // Verify that both sides of the binary operation are of compatible types.
-                if let Err(mut lhs_errors) = self.check_expr(lhs) {
-                    errors.append(&mut lhs_errors);
-                }
-                if let Err(mut rhs_errors) = self.check_expr(rhs) {
-                    errors.append(&mut rhs_errors);
-                }
-
+                self.check_expr(lhs);
+                self.check_expr(rhs);
                 if lhs.ty != rhs.ty {
-                    let report = ariadne::Report::build(
-                        ReportKind::Error,
-                        (self.filename, expr.span().into_range()),
-                    )
-                    .with_code(5)
-                    .with_message(format!(
-                        "type mismatch in binary operation '{op}': left is '{}', right is '{}'",
-                        lhs.ty, rhs.ty
-                    ))
-                    .with_label(
-                        ariadne::Label::new((self.filename, lhs.span().into_range()))
-                            .with_message(format!("Left operand is of type '{}'", lhs.ty))
-                            .with_color(Color::Cyan),
-                    )
-                    .with_label(
-                        ariadne::Label::new((self.filename, rhs.span().into_range()))
-                            .with_message(format!("Right operand is of type '{}'", rhs.ty))
-                            .with_color(Color::Red),
-                    )
-                    .finish();
-                    errors.push(report);
+                    self.errors
+                        .emit_binary_op_type_mismatch_error(*op, lhs, rhs, span);
                 }
 
                 // Ensure that boolean values are not used in arithmetic operations.
                 if lhs.ty == lang::Type::Bool || rhs.ty == lang::Type::Bool {
-                    let report = ariadne::Report::build(
-                        ReportKind::Error,
-                        (self.filename, expr.span().into_range()),
-                    )
-                    .with_code(6)
-                    .with_message(format!(
-                        "boolean values cannot be used in arithmetic operation '{op}'"
-                    ));
-
-                    // Add a specific labels if the left operand is a boolean.
-                    let report = if lhs.ty == lang::Type::Bool {
-                        report.with_label(
-                            ariadne::Label::new((self.filename, lhs.span().into_range()))
-                                .with_message("Left operand is a boolean value")
-                                .with_color(Color::Cyan),
-                        )
-                    } else {
-                        report
-                    };
-
-                    // Add a specific label if the right operand is a boolean.
-                    let report = if rhs.ty == lang::Type::Bool {
-                        report.with_label(
-                            ariadne::Label::new((self.filename, rhs.span().into_range()))
-                                .with_message("Right operand is a boolean value")
-                                .with_color(Color::Red),
-                        )
-                    } else {
-                        report
-                    };
-
-                    errors.push(report.finish());
+                    self.errors
+                        .emit_boolean_arithmetic_error(*op, lhs, rhs, span);
                 }
             }
-            ast::ExprKind::Placeholder(_) => unreachable!(),
             ast::ExprKind::Error(_) => unreachable!(),
         }
+    }
 
+    /// Infer types for a statement, updating it in place.
+    fn infer_stmt(&mut self, stmt: &mut Spanned<ast::Stmt<'src>>) {
+        match &mut stmt.kind {
+            ast::StmtKind::Return(expr) => self.infer_expr(expr),
+            ast::StmtKind::Let(ident, ty, expr) => {
+                // Infer the type of the expression if it is not already known.
+                if ty.0 == lang::Type::Infer {
+                    self.infer_expr(expr);
+                    ty.0 = expr.ty;
+                }
+
+                // Insert the new variable into the current scope. If a variable with the same
+                // name already exists in the current scope, an error will be reported.
+                self.scopes.insert_variable(
+                    &mut self.errors,
+                    Spanned::new(
+                        symbol::Variable {
+                            name: ident.name,
+                            ty: ty.0,
+                        },
+                        stmt.span(),
+                    ),
+                );
+            }
+            ast::StmtKind::Error(_) => unreachable!(),
+        }
+    }
+
+    /// Infer the type of an expression, updating it in place.
+    fn infer_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
+        if expr.ty == lang::Type::Infer {
+            match &mut expr.kind {
+                ast::ExprKind::Binary(_, lhs, rhs) => {
+                    // Recursively infer types of the left and right expressions if needed.
+                    self.infer_expr(lhs);
+                    self.infer_expr(rhs);
+
+                    // If both sides have the same non-infer type, set the expression's type
+                    // to that. However, if either side is still `Infer` or doesn't match, we
+                    // set the type to `Unknown` to indicate a type inference failure.
+                    // TODO: Implement proper type coercion rules here.
+                    if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
+                        expr.ty = lhs.ty;
+                    } else {
+                        expr.ty = lang::Type::Unknown;
+                    }
+                }
+                ast::ExprKind::Identifier(identifier) => {
+                    // Identifier type is always explicited during their declaration. So we can
+                    // simply look it up in the symbol table and assign the variable's type to the
+                    // expression.
+                    if let Some(var) = self.scopes.get_variable(identifier.name) {
+                        expr.ty = var.ty;
+                    } else {
+                        self.errors.emit_undefined_variable_error(identifier);
+                        expr.ty = lang::Type::Unknown;
+                    }
+                }
+                ast::ExprKind::Literal(_) => {
+                    // Literal types should be inferred based on their value and context. For now,
+                    // we assume all literals are integers until we implement proper literal types.
+                    todo!("Handle literal type inference");
+                }
+                ast::ExprKind::Bool(_) => {
+                    unreachable!("Boolean literals should always have type Bool after parsing")
+                }
+                ast::ExprKind::Error(_) => {
+                    unreachable!("Error expressions should not appear during type inference")
+                }
+            }
+        }
+    }
+
+    /// Finalize the semantic analysis, returning any collected errors.
+    pub fn finalize(self) -> Result<(), Vec<SemanticError<'src>>> {
+        let errors = self.errors.collect();
         if errors.is_empty() {
             Ok(())
         } else {

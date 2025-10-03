@@ -55,11 +55,11 @@ pub enum Token<'a> {
 impl core::fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
-            Token::Identifier(ident) => write!(f, "{}", ident),
-            Token::Delimiter(delim) => write!(f, "{}", delim),
-            Token::Operator(op) => write!(f, "{}", op),
-            Token::Keyword(kw) => write!(f, "{}", kw),
-            Token::Number(num) => write!(f, "{}", num),
+            Token::Identifier(ident) => write!(f, "{ident}"),
+            Token::Delimiter(delim) => write!(f, "{delim}"),
+            Token::Operator(op) => write!(f, "{op}"),
+            Token::Keyword(kw) => write!(f, "{kw}"),
+            Token::Number(num) => write!(f, "{num}"),
         }
     }
 }
@@ -68,10 +68,24 @@ impl core::fmt::Display for Token<'_> {
 /// entities in the input string. The lexer is responsible for recognizing the different
 /// tokens in the input string and returning them to the parser, which will then build an
 /// abstract syntax tree (AST) with those tokens.
+///
+/// # Panics
+/// This function should never panic in theory. However, panic actually can happen if there is
+/// the lexer cannot parse an number literal due to an invalid format. For example, `0xGHI`
+/// is not a valid hexadecimal number, so the lexer will panic when it tries to parse it.
+/// FIXME: Change this function to not panic on invalid number literals.
+#[must_use]
 pub fn lexer<'a>()
 -> impl Parser<'a, &'a str, Vec<Spanned<Token<'a>>>, extra::Err<Rich<'a, char, Span>>> {
     // A simple lexer for parsing keywords.
-    let keyword = choice((just("return"), just("true"), just("false"))).map(Token::Keyword);
+    let keyword = choice((
+        just("return"),
+        just("true"),
+        just("false"),
+        just("let"),
+        just("mut"),
+    ))
+    .map(Token::Keyword);
 
     // A lexer for parsing C-style identifiers
     let ident = text::ascii::ident().map(Token::Identifier);
@@ -103,7 +117,7 @@ pub fn lexer<'a>()
     // on the context. To resolve this ambiguity, we must consider longer
     // operators first before shorter operators. To ensure that longer operators
     // will not be consumed as shorter operators.
-    let operator = choice((just("+"), just("-"), just("*"), just("/")))
+    let operator = choice((just("+"), just("-"), just("*"), just("/"), just("=")))
         .to_slice()
         .map(Token::Operator);
 

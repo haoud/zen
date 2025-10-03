@@ -1,0 +1,4 @@
+int main() {
+    let a : bool = 4;   // E009: Type mismatch in variable declaration
+    return a;
+}
