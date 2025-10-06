@@ -90,7 +90,7 @@ impl<'src> SemanticAnalysis<'src> {
                             .emit_return_type_mismatch_error(proto, stmt_span, expr.ty);
                     }
                 }
-                ast::StmtKind::Let(_, ty, expr) => {
+                ast::StmtKind::Let(_, ty, expr) | ast::StmtKind::Var(_, ty, expr) => {
                     self.check_expr(expr, false);
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
@@ -98,6 +98,26 @@ impl<'src> SemanticAnalysis<'src> {
                     if expr.ty != ty.0 {
                         self.errors
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
+                    }
+                }
+                ast::StmtKind::Assign(ident, expr) => {
+                    self.check_expr(expr, false);
+
+                    // If the variable does not exist, report an undefined variable error
+                    // and skip further checks for this assignment.
+                    if let Some(var) = self.scopes.get_variable(ident.name) {
+                        if !var.mutable {
+                            self.errors
+                                .emit_mutation_of_immutable_variable_error(var, stmt_span);
+                        }
+
+                        // Check that the expression type matches the variable's declared type.
+                        if expr.ty != var.ty && expr.ty != lang::Type::Unknown {
+                            self.errors
+                                .emit_type_mismatch_in_assignment_error(var, expr, span);
+                        }
+                    } else {
+                        self.errors.emit_undefined_variable_error(ident);
                     }
                 }
                 ast::StmtKind::Error(_) => unreachable!(),
@@ -174,30 +194,53 @@ impl<'src> SemanticAnalysis<'src> {
 
     /// Infer types for a statement, updating it in place.
     fn infer_stmt(&mut self, stmt: &mut Spanned<ast::Stmt<'src>>) {
+        let span = stmt.span();
         match &mut stmt.kind {
             ast::StmtKind::Return(expr) => self.infer_expr(expr),
             ast::StmtKind::Let(ident, ty, expr) => {
-                // Infer the type of the expression if it is not already known.
-                if ty.0 == lang::Type::Infer {
-                    self.infer_expr(expr);
-                    ty.0 = expr.ty;
-                }
-
-                // Insert the new variable into the current scope. If a variable with the same
-                // name already exists in the current scope, an error will be reported.
-                self.scopes.insert_variable(
-                    &mut self.errors,
-                    Spanned::new(
-                        symbol::Variable {
-                            name: ident.name,
-                            ty: ty.0,
-                        },
-                        stmt.span(),
-                    ),
-                );
+                self.infer_let_var(ident, expr, &mut ty.0, span, false);
+            }
+            ast::StmtKind::Var(ident, ty, expr) => {
+                self.infer_let_var(ident, expr, &mut ty.0, span, true);
+            }
+            ast::StmtKind::Assign(_, expr) => {
+                self.infer_expr(expr);
             }
             ast::StmtKind::Error(_) => unreachable!(),
         }
+    }
+
+    /// Infer the type of the expression assigned to a `let` or `var` statement, updating both
+    /// the variable type and the expression type in place. Then, insert the new variable into
+    /// the current scope. If a variable with the same name already exists in the current scope,
+    /// an error will be reported.
+    fn infer_let_var(
+        &mut self,
+        ident: &ast::Identifier<'src>,
+        expr: &mut Spanned<ast::Expr<'src>>,
+        ty: &mut lang::Type,
+        span: lang::Span,
+        mutable: bool,
+    ) {
+        // Infer the type of the expression if it is not already known.
+        if *ty == lang::Type::Infer {
+            self.infer_expr(expr);
+            *ty = expr.ty;
+        }
+
+        // Insert the new variable into the current scope. If a variable with the same
+        // name already exists in the current scope, an error will be reported.
+        self.scopes.insert_variable(
+            &mut self.errors,
+            Spanned::new(
+                symbol::Variable {
+                    name: ident.name,
+                    ty: *ty,
+                    mutable,
+                },
+                span,
+            ),
+        );
     }
 
     /// Infer the type of an expression, updating it in place.

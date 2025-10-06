@@ -120,7 +120,40 @@ where
             )
         });
 
-    choice((return_expr, let_expr)).boxed()
+    let var_expr = just(Token::Keyword("var"))
+        .ignore_then(ident_parser())
+        .then_ignore(just(Token::Delimiter(":")))
+        .then(builtin_type_parser().or_not())
+        .then_ignore(just(Token::Operator("=")))
+        .then(expr_parser())
+        .then_ignore(just(Token::Delimiter(";")))
+        .map_with(|((ident, ty), expr), e| {
+            Spanned::new(
+                ast::Stmt {
+                    kind: ast::StmtKind::Var(
+                        ident,
+                        ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                        Box::new(expr),
+                    ),
+                },
+                e.span(),
+            )
+        });
+
+    let assign_expr = ident_parser()
+        .then_ignore(just(Token::Operator("=")))
+        .then(expr_parser())
+        .then_ignore(just(Token::Delimiter(";")))
+        .map_with(|(ident, expr), e| {
+            Spanned::new(
+                ast::Stmt {
+                    kind: ast::StmtKind::Assign(Box::new(ident), Box::new(expr)),
+                },
+                e.span(),
+            )
+        });
+
+    choice((return_expr, let_expr, var_expr, assign_expr)).boxed()
 }
 
 /// A parser for expressions in the language. Currently, the only expression that is supported

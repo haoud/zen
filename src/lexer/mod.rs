@@ -83,7 +83,7 @@ pub fn lexer<'a>()
         just("true"),
         just("false"),
         just("let"),
-        just("mut"),
+        just("var"),
     ))
     .map(Token::Keyword);
 

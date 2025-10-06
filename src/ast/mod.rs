@@ -90,6 +90,20 @@ pub enum StmtKind<'src> {
         Box<Spanned<Expr<'src>>>,
     ),
 
+    // A var statement. The first element is the identifier being bound, the second
+    // element is the optional type annotation, and the third element is the expression
+    // being assigned to the identifier. This is similar to a let statement, but the
+    // variable can be mutated after it is declared, unlike a let statement.
+    Var(
+        Spanned<Identifier<'src>>,
+        Spanned<Type>,
+        Box<Spanned<Expr<'src>>>,
+    ),
+
+    /// An assignment statement. The first element is the identifier being assigned to,
+    /// and the second element is the expression being assigned to the identifier.
+    Assign(Box<Spanned<Identifier<'src>>>, Box<Spanned<Expr<'src>>>),
+
     /// A error statement that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed
     /// to the code generator.

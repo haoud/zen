@@ -48,6 +48,12 @@ pub enum SemanticErrorKind {
 
     /// The negation operator '-' is applied to a non-numeric type.
     NegationOfNonNumericType = 11,
+
+    /// Attempted to mutate an immutable variable (declared with `let` instead of `var`).
+    MutationOfImmutableVariable = 12,
+
+    /// Type mismatch in assignment (the type of the expression does not match the variable's type).
+    TypeMismatchInAssignment = 13,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -316,7 +322,7 @@ impl<'src> SemanticDiagnostic<'src> {
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
                 .with_code(SemanticErrorKind::VariableDefinitionTypeMismatch as u32)
                 .with_message(format!(
-                    "type mismatch in let statement: expected '{}', found '{}'",
+                    "type mismatch in variable definition: expected '{}', found '{}'",
                     ty.0, expr.ty
                 ))
                 .with_label(
@@ -373,6 +379,69 @@ impl<'src> SemanticDiagnostic<'src> {
                             "the expression is of type '{}', which is not numeric",
                             expr.ty
                         ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a mutation of immutable variable error, given the spanned variable being mutated
+    /// (which is not mutable, i.e declared with `let` instead of `var`).
+    #[inline]
+    pub fn emit_mutation_of_immutable_variable_error(
+        &mut self,
+        variable: &Spanned<symbol::Variable<'src>>,
+        stmt_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
+                .with_code(SemanticErrorKind::MutationOfImmutableVariable as u32)
+                .with_message(format!(
+                    "cannot assign to immutable variable '{}'",
+                    variable.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, stmt_span.into_range()))
+                        .with_message(format!("variable '{}' is not mutable", variable.name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, variable.span().into_range()))
+                        .with_message("immutable variable declared here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when the type of the expression assigned to a variable does not match
+    /// the variable's type. It takes the spanned variable, the spanned expression, and the
+    /// span of the entire assignment statement.
+    #[inline]
+    pub fn emit_type_mismatch_in_assignment_error(
+        &mut self,
+        variable: &Spanned<symbol::Variable<'src>>,
+        expr: &Spanned<ast::Expr<'src>>,
+        stmt_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
+                .with_code(SemanticErrorKind::TypeMismatchInAssignment as u32)
+                .with_message(format!(
+                    "type mismatch in assignment to variable '{}': expected '{}', found '{}'",
+                    variable.name, variable.ty, expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, variable.span().into_range()))
+                        .with_message(format!(
+                            "Expected type '{}' for variable '{}'",
+                            variable.ty, variable.name
+                        ))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Found type '{}' in expression", expr.ty))
                         .with_color(Color::Red),
                 )
                 .finish(),

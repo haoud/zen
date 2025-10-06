@@ -1,4 +1,6 @@
 int main() {
-    let max = 9223372036854775807;
-    return -(-9223372036854775808);
+    let a := 5;
+    var b := 4;
+    b = a + 2;
+    return b;
 }

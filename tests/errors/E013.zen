@@ -1,0 +1,5 @@
+int main() {
+    let a := 5;
+    a = true;         // E013: Type mismatch in assignment
+    return a;
+}

@@ -2,14 +2,15 @@ use std::collections::HashMap;
 
 use crate::lang::{self, Spanned};
 
-/// A variable symbol with a name and a type.
+/// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variable<'src> {
     pub name: &'src str,
     pub ty: lang::Type,
+    pub mutable: bool,
 }
 
-/// A function symbol with a name and a return type.
+/// A function symbol
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 
 pub struct Function<'src> {

@@ -158,7 +158,16 @@ impl Codegen {
             ast::StmtKind::Let(ident, ty, expr) => {
                 let ctype = self.generate_type(ty);
                 let value = self.generate_expr(expr);
+                format!("const {ctype} {ident} = {value};", ident = ident.name)
+            }
+            ast::StmtKind::Var(ident, ty, expr) => {
+                let ctype = self.generate_type(ty);
+                let value = self.generate_expr(expr);
                 format!("{ctype} {ident} = {value};", ident = ident.name)
+            }
+            ast::StmtKind::Assign(ident, expr) => {
+                let expr = self.generate_expr(expr);
+                format!("{ident} = {expr};", ident = ident.name)
             }
             ast::StmtKind::Error(..) => unreachable!(),
         }
