@@ -1,7 +1,4 @@
-bool main() {
-    let done := true;
-    let a := 6;
-    let b := a + 4;
-    let c := (b * 2) - (a / 5);
-    return done;
+int main() {
+    let max = 9223372036854775807;
+    return -(-9223372036854775808);
 }

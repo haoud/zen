@@ -11,12 +11,12 @@ pub struct Identifier<'src> {
 
 /// A literal value.
 #[derive(Debug, Clone, Hash)]
-pub struct Literal {
+pub struct Literal<'src> {
     /// The value of the literal. For now, literals are only integers and are
     /// stored as 64-bit unsigned integers in the AST, allowing some indesirable
     /// behavior if the value is larger than its type can hold. Those kind of
     /// errors will be caught by the semantic analysis phase.
-    pub value: u64,
+    pub value: lang::Literal<'src>,
 
     /// The type of the literal. Most of the time, the type of the literal is
     /// inferred from the context in which it is used.
@@ -116,7 +116,7 @@ pub enum ExprKind<'src> {
     Bool(Spanned<bool>),
 
     /// A literal value.
-    Literal(Spanned<Literal>),
+    Literal(Spanned<Literal<'src>>),
 
     /// A binary operation. The first element is the operator, the second element is the left-hand
     /// side expression, and the third element is the right-hand side expression.
@@ -125,6 +125,10 @@ pub enum ExprKind<'src> {
         Box<Spanned<Expr<'src>>>,
         Box<Spanned<Expr<'src>>>,
     ),
+
+    /// A unary operation. The first element is the operator, and the second element is the
+    /// expression being operated on.
+    Unary(lang::UnaryOp, Box<Spanned<Expr<'src>>>),
 
     /// An identifier. The element is the identifier being referenced.
     Identifier(Spanned<Identifier<'src>>),

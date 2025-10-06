@@ -1,0 +1,3 @@
+int main() {
+    return 9223372036854775808;   // E010: Integer literal overflow
+}

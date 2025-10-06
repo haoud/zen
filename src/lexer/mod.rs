@@ -8,7 +8,7 @@
 //! The code here is short and quite simple because the `chumsky` library abstracts away most of
 //! the complexity of writing a lexer, which is nice as it allows us to focus on the language
 //! itself rather than some "boring" implementation details.
-use crate::lang::{Span, Spanned};
+use crate::lang::{Literal, LiteralBase, Span, Spanned};
 use chumsky::prelude::*;
 
 /// A token is a single unit of the input string that represents a single entity in the language.
@@ -49,7 +49,7 @@ pub enum Token<'a> {
     Delimiter(&'a str),
 
     /// A number literal
-    Number(u64),
+    Number(Literal<'a>),
 }
 
 impl core::fmt::Display for Token<'_> {
@@ -59,7 +59,7 @@ impl core::fmt::Display for Token<'_> {
             Token::Delimiter(delim) => write!(f, "{delim}"),
             Token::Operator(op) => write!(f, "{op}"),
             Token::Keyword(kw) => write!(f, "{kw}"),
-            Token::Number(num) => write!(f, "{num}"),
+            Token::Number(lit) => write!(f, "{lit}"),
         }
     }
 }
@@ -96,16 +96,16 @@ pub fn lexer<'a>()
     let number = choice((
         just("0x")
             .ignore_then(text::int(16))
-            .map(|x| u64::from_str_radix(x, 16).unwrap()),
+            .map(|s| (s, LiteralBase::Hexadecimal)),
         just("0b")
             .ignore_then(text::int(2))
-            .map(|x| u64::from_str_radix(x, 2).unwrap()),
+            .map(|s| (s, LiteralBase::Binary)),
         just("0o")
             .ignore_then(text::int(8))
-            .map(|x| u64::from_str_radix(x, 8).unwrap()),
-        text::int(10).from_str().map(|x| x.unwrap()),
+            .map(|s| (s, LiteralBase::Octal)),
+        text::int(10).map(|s| (s, LiteralBase::Decimal)),
     ))
-    .map(Token::Number);
+    .map(|(num_str, base)| Token::Number(Literal::new(num_str, base)));
 
     // A parser for operators. Operators are special combinations of
     // one or more characters that represent an operation in the language.

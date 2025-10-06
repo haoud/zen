@@ -42,6 +42,12 @@ pub enum SemanticErrorKind {
 
     /// The type of a variable definition does not match the variable's declared type.
     VariableDefinitionTypeMismatch = 9,
+
+    /// An integer literal is too large to fit in the specified type.
+    LiteralOverflow = 10,
+
+    /// The negation operator '-' is applied to a non-numeric type.
+    NegationOfNonNumericType = 11,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -296,6 +302,9 @@ impl<'src> SemanticDiagnostic<'src> {
         );
     }
 
+    /// Emit a variable definition type mismatch error, given the expression assigned to
+    /// the variable, the declared type of the variable, and the span of the entire let
+    /// statement.
     #[inline]
     pub fn emit_variable_definition_type_mismatch_error(
         &mut self,
@@ -318,6 +327,52 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, expr.span().into_range()))
                         .with_message(format!("Found type '{}'", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an integer literal overflow error, given the spanned literal that caused
+    /// the overflow.
+    #[inline]
+    pub fn emit_literal_overflow_error(&mut self, literal: &Spanned<ast::Literal>) {
+        let span = literal.span();
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::LiteralOverflow as u32)
+                .with_message(format!(
+                    "integer literal '{}' overflows the type '{}'",
+                    literal.value, literal.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!(
+                            "the literal '{}' does not fit in the type '{}'",
+                            literal.value, literal.ty
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit a negation of non-numeric type error, given the expression being negated.
+    #[inline]
+    pub fn emit_negation_of_non_numeric_type_error(&mut self, expr: &Spanned<ast::Expr<'src>>) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, expr.span().into_range()))
+                .with_code(SemanticErrorKind::NegationOfNonNumericType as u32)
+                .with_message(format!(
+                    "negation operator '-' cannot be applied to type '{}'",
+                    expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!(
+                            "the expression is of type '{}', which is not numeric",
+                            expr.ty
+                        ))
                         .with_color(Color::Red),
                 )
                 .finish(),

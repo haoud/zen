@@ -10,16 +10,6 @@ pub mod lexer;
 pub mod parser;
 pub mod semantic;
 
-// Parsing:
-// - [x] Variable declarations
-// - [x] Variable in binary operations
-// Semantic Analysis:
-// - [x] Add symbol table support for variables
-// - [x] Simple type inference for variable declarations if no type is provided
-// - [x] Type checking for variable assignments and usage
-// Codegen:
-// - [x] Update codegen to handle parser changes
-
 fn main() {
     let matches = clap::command!("zen")
         .about("Zen programming language compiler")

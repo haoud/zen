@@ -170,11 +170,26 @@ where
             .or(expr.delimited_by(just(Token::Delimiter("(")), just(Token::Delimiter(")"))))
             .boxed();
 
+        // Parse unary operators (e.g. `-`). These have higher precedence than
+        // binary operators, so we parse them first.
+        let unary = unary_ops()
+            .repeated()
+            .foldr_with(atom.clone(), |op, rhs, e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::Unary(op, Box::new(rhs)),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            })
+            .boxed();
+
         // Parse product operators (e.g. `*` and `/`). These have higher precedence
         // than sum operators, so we parse them first.
-        let product = atom
+        let product = unary
             .clone()
-            .foldl_with(product_ops().then(atom).repeated(), |lhs, (op, rhs), e| {
+            .foldl_with(product_ops().then(unary).repeated(), |lhs, (op, rhs), e| {
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
@@ -202,6 +217,15 @@ where
 
         sum
     })
+}
+
+#[must_use]
+pub fn unary_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::UnaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    choice((just(Token::Operator("-")).to(lang::UnaryOp::Neg),))
 }
 
 /// A parser for addition and subtraction operators in the language.

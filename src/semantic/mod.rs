@@ -78,7 +78,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                     // Check the expression being returned for semantic correctness. If there are
                     // errors, collect them, but still proceed to check the return type.
-                    self.check_expr(expr);
+                    self.check_expr(expr, false);
                     base_ret_stmt_span = Some(stmt_span);
 
                     // Check that the return type matches the function's declared return type. If
@@ -91,6 +91,7 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
                 ast::StmtKind::Let(_, ty, expr) => {
+                    self.check_expr(expr, false);
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
                     // that should have happened before this semantic check.
@@ -113,18 +114,15 @@ impl<'src> SemanticAnalysis<'src> {
     }
 
     /// Check an expression for semantic correctness, returning any errors found.
-    pub fn check_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
+    pub fn check_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>, negated: bool) {
         let span = expr.span();
 
         self.infer_expr(expr);
         match &mut expr.kind {
-            ast::ExprKind::Bool(_) => (),
-            ast::ExprKind::Literal(_) => (),
-            ast::ExprKind::Identifier(_) => (),
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 // Verify that both sides of the binary operation are of compatible types.
-                self.check_expr(lhs);
-                self.check_expr(rhs);
+                self.check_expr(lhs, false);
+                self.check_expr(rhs, false);
                 if lhs.ty != rhs.ty {
                     self.errors
                         .emit_binary_op_type_mismatch_error(*op, lhs, rhs, span);
@@ -135,6 +133,40 @@ impl<'src> SemanticAnalysis<'src> {
                     self.errors
                         .emit_boolean_arithmetic_error(*op, lhs, rhs, span);
                 }
+            }
+            ast::ExprKind::Unary(op, rhs) => {
+                // Disallow negation of boolean types.
+                if *op == lang::UnaryOp::Neg && rhs.ty == lang::Type::Bool {
+                    self.errors.emit_negation_of_non_numeric_type_error(rhs);
+                }
+
+                // Recursively check the inner expression, passing along whether we are in
+                // a negated context or not. This is needed to correctly handle cases like
+                // double negation and to ensure proper overflow/underflow checks.
+                if *op == lang::UnaryOp::Neg {
+                    self.check_expr(rhs, !negated);
+                } else {
+                    self.check_expr(rhs, negated);
+                }
+            }
+            ast::ExprKind::Literal(x) => {
+                // Ensure that integer literals fit within the bounds of the integer type.
+                match x.ty {
+                    lang::Type::Int => {
+                        if x.value.parse_i64(negated).is_err() {
+                            self.errors.emit_literal_overflow_error(x);
+                        }
+                    }
+                    lang::Type::Bool => {
+                        // Nothing to check for boolean literals.
+                    }
+                    lang::Type::Infer | lang::Type::Unknown => {
+                        unreachable!("Literal types should be inferred during type inference")
+                    }
+                }
+            }
+            ast::ExprKind::Identifier(_) | ast::ExprKind::Bool(_) => {
+                // Nothing to check for identifiers and boolean literals.
             }
             ast::ExprKind::Error(_) => unreachable!(),
         }
@@ -186,6 +218,11 @@ impl<'src> SemanticAnalysis<'src> {
                     } else {
                         expr.ty = lang::Type::Unknown;
                     }
+                }
+                ast::ExprKind::Unary(_, rhs) => {
+                    // Recursively infer the type of the inner expression if needed.
+                    self.infer_expr(rhs);
+                    expr.ty = rhs.ty;
                 }
                 ast::ExprKind::Identifier(identifier) => {
                     // Identifier type is always explicited during their declaration. So we can

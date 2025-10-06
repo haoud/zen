@@ -184,6 +184,11 @@ impl Codegen {
                 let op = op.as_str();
                 format!("({lexpr} {op} {rexpr})")
             }
+            ast::ExprKind::Unary(op, expr) => {
+                let expr = self.generate_expr(expr);
+                let op = op.as_str();
+                format!("({op}{expr})")
+            }
             ast::ExprKind::Error(..) => unreachable!(),
         }
     }
