@@ -27,15 +27,17 @@ pub fn func_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    // A parser for function parameters, which are of the form `<ident> : <type>`. Multiple
+    // A parser for function parameters, which are of the form `(mut) <ident> : <type>`. Multiple
     // parameters are separated by commas. For example: `a: int, b: int`.
-    let parameters = ident_parser()
+    let parameters = just(lexer::Token::Keyword("mut"))
+        .or_not()
+        .then(ident_parser())
         .then_ignore(just(lexer::Token::Delimiter(":")))
         .then(builtin_type_parser())
-        .map_with(|(name, ty), e| {
+        .map_with(|((mutable, name), ty), e| {
             Spanned::new(
                 ast::FunctionParameter {
-                    mutable: false,
+                    mutable: mutable.is_some(),
                     ident: name,
                     ty,
                 },

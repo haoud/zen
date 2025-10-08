@@ -159,9 +159,9 @@ impl<'src> Scope<'src> {
                 .map(|param| {
                     Spanned::new(
                         symbol::Variable {
+                            mutable: param.mutable,
                             name: param.ident.name,
                             ty: param.ty.0,
-                            mutable: false,
                         },
                         param.span(),
                     )

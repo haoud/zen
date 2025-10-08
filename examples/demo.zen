@@ -5,8 +5,11 @@ int main() {
     return b;
 }
 
-int add_five(a: int) {
-    return a + 5;
+// A strange function that adds five to its argument and returns it. Why not directly 
+// return a + 5 ? Because i need to test mutable parameters :)
+int add_five(mut a: int) {
+    a += 5;     
+    return a;
 }
 
 int add(a: int, b: int) {
