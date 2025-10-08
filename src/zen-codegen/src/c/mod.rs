@@ -161,9 +161,10 @@ impl Codegen {
                 let value = self.generate_expr(expr);
                 format!("{ctype} {ident} = {value};", ident = ident.name)
             }
-            ast::StmtKind::Assign(ident, expr) => {
+            ast::StmtKind::Assign(op, ident, expr) => {
+                let op = op.as_ref().map(lang::BinaryOp::as_str).unwrap_or("");
                 let expr = self.generate_expr(expr);
-                format!("{ident} = {expr};", ident = ident.name)
+                format!("{ident} {op}= {expr};", ident = ident.name,)
             }
             ast::StmtKind::Error(..) => unreachable!(),
         }

@@ -51,6 +51,9 @@ pub enum SemanticErrorKind {
 
     /// Type mismatch in assignment (the type of the expression does not match the variable's type).
     TypeMismatchInAssignment = 13,
+
+    /// Attempted to use a compound assignment (like `+=`, `-=`, etc.) on a boolean variable.
+    BoolCompoundAssignment = 14,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -440,6 +443,32 @@ impl<'src> SemanticDiagnostic<'src> {
                     ariadne::Label::new((self.filename, expr.span().into_range()))
                         .with_message(format!("Found type '{}' in expression", expr.ty))
                         .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a compound assignment (like `+=`, `-=`, etc.) is attempted
+    /// on a boolean variable. It takes the spanned variable, the binary operator used
+    /// in the compound assignment, and the span of the entire assignment statement.
+    #[inline]
+    pub fn emit_bool_compound_assignment_error(
+        &mut self,
+        variable: &Spanned<symbol::Variable<'src>>,
+        op: lang::BinaryOp,
+        stmt_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
+                .with_code(SemanticErrorKind::BoolCompoundAssignment as u32)
+                .with_message(format!(
+                    "cannot use compound assignment '{op}'= on boolean variable '{}'",
+                    variable.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, variable.span().into_range()))
+                        .with_message("Boolean variable declared here")
+                        .with_color(Color::Cyan),
                 )
                 .finish(),
         );

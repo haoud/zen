@@ -100,9 +100,14 @@ pub enum StmtKind<'src> {
         Box<Spanned<Expr<'src>>>,
     ),
 
-    /// An assignment statement. The first element is the identifier being assigned to,
-    /// and the second element is the expression being assigned to the identifier.
-    Assign(Box<Spanned<Identifier<'src>>>, Box<Spanned<Expr<'src>>>),
+    /// An assignment statement. The first element is an optional binary operator (for
+    /// compound assignments like `+=`), the second element is the identifier being assigned
+    /// to, and the third element is the expression being assigned to the identifier.
+    Assign(
+        Option<BinaryOp>,
+        Box<Spanned<Identifier<'src>>>,
+        Box<Spanned<Expr<'src>>>,
+    ),
 
     /// A error statement that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed

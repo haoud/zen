@@ -101,6 +101,9 @@ where
             )
         });
 
+    // Parse a `let` statement, which is of the form `let <ident> [: <type>] = <expr>;`. The
+    // type annotation is optional, and if it is not provided, the type will be inferred
+    // from the expression if possible.
     let let_expr = just(lexer::Token::Keyword("let"))
         .ignore_then(ident_parser())
         .then_ignore(just(lexer::Token::Delimiter(":")))
@@ -121,6 +124,9 @@ where
             )
         });
 
+    // Parse a `var` statement, which is of the form `var <ident> [: <type>] = <expr>;`
+    // This is very similar to a let statement, but the variable can be mutated after it
+    // is declared, unlike a let statement which declares an immutable variable.
     let var_expr = just(lexer::Token::Keyword("var"))
         .ignore_then(ident_parser())
         .then_ignore(just(lexer::Token::Delimiter(":")))
@@ -141,20 +147,23 @@ where
             )
         });
 
-    let assign_expr = ident_parser()
+    // Parse an assignment statement, which is of the form `<ident> [op] = <expr>;`, where
+    // `op` is an optional binary operator for compound assignments like `+=`, `-=`...
+    let assign_op_expr = ident_parser()
+        .then(product_ops().or(sum_ops()).or_not())
         .then_ignore(just(lexer::Token::Operator("=")))
         .then(expr_parser())
         .then_ignore(just(lexer::Token::Delimiter(";")))
-        .map_with(|(ident, expr), e| {
+        .map_with(|((ident, op), expr), e| {
             Spanned::new(
                 ast::Stmt {
-                    kind: ast::StmtKind::Assign(Box::new(ident), Box::new(expr)),
+                    kind: ast::StmtKind::Assign(op, Box::new(ident), Box::new(expr)),
                 },
                 e.span(),
             )
         });
 
-    choice((return_expr, let_expr, var_expr, assign_expr)).boxed()
+    choice((return_expr, let_expr, var_expr, assign_op_expr)).boxed()
 }
 
 /// A parser for expressions in the language. Currently, the only expression that is supported

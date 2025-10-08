@@ -1,0 +1,5 @@
+bool main() {
+    let a := true;
+    a += false;         // E014: Attempted to use a compound assignment on a boolean variable
+    return a;
+}

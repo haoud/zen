@@ -100,7 +100,7 @@ impl<'src> SemanticAnalysis<'src> {
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
                 }
-                ast::StmtKind::Assign(ident, expr) => {
+                ast::StmtKind::Assign(op, ident, expr) => {
                     self.check_expr(expr, false);
 
                     // If the variable does not exist, report an undefined variable error
@@ -115,6 +115,14 @@ impl<'src> SemanticAnalysis<'src> {
                         if expr.ty != var.ty && expr.ty != lang::Type::Unknown {
                             self.errors
                                 .emit_type_mismatch_in_assignment_error(var, expr, span);
+                        }
+
+                        // Ensure that compound assignments are not used on boolean variables.
+                        if let Some(op) = op {
+                            if var.ty == lang::Type::Bool {
+                                self.errors
+                                    .emit_bool_compound_assignment_error(var, *op, span);
+                            }
                         }
                     } else {
                         self.errors.emit_undefined_variable_error(ident);
@@ -203,7 +211,7 @@ impl<'src> SemanticAnalysis<'src> {
             ast::StmtKind::Var(ident, ty, expr) => {
                 self.infer_let_var(ident, expr, &mut ty.0, span, true);
             }
-            ast::StmtKind::Assign(_, expr) => {
+            ast::StmtKind::Assign(_, _, expr) => {
                 self.infer_expr(expr);
             }
             ast::StmtKind::Error(_) => unreachable!(),
