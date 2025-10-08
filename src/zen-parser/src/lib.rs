@@ -267,8 +267,11 @@ where
             ))
             .boxed();
 
-        // Parse unary operators (e.g. `-`). These have higher precedence than
-        // binary operators, so we parse them first.
+        // Now we will parse operators based on their precedence, from highest to lowest. If two
+        // operators have the same precedence, they will be parsed based on their associativity,
+        // which is left-to-right for all binary operators in this language.
+
+        // Parse unary operators.
         let unary = unary_ops()
             .repeated()
             .foldr_with(atom, |op, rhs, e| {
@@ -282,8 +285,7 @@ where
             })
             .boxed();
 
-        // Parse product operators (e.g. `*` and `/`). These have higher precedence
-        // than sum operators, so we parse them first.
+        // Parse product operators.
         let product = unary
             .clone()
             .foldl_with(product_ops().then(unary).repeated(), |lhs, (op, rhs), e| {
@@ -297,8 +299,7 @@ where
             })
             .boxed();
 
-        // Parse sum operators (e.g. `+` and `-`). These have lower precedence than
-        // product operators, so we parse them after.
+        // Parse sum operators.
         let sum = product
             .clone()
             .foldl_with(sum_ops().then(product).repeated(), |lhs, (op, rhs), e| {
@@ -312,7 +313,58 @@ where
             })
             .boxed();
 
-        sum
+        // Parse relational operators.
+        let relational_ops = sum
+            .clone()
+            .foldl_with(
+                relational_ops().then(sum).repeated(),
+                |lhs, (op, rhs), e| {
+                    Spanned::new(
+                        ast::Expr {
+                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                            ty: lang::Type::Infer,
+                        },
+                        e.span(),
+                    )
+                },
+            )
+            .boxed();
+
+        // Parse logical AND operator.
+        let logical_and = relational_ops
+            .clone()
+            .foldl_with(
+                logical_and_ops().then(relational_ops).repeated(),
+                |lhs, (op, rhs), e| {
+                    Spanned::new(
+                        ast::Expr {
+                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                            ty: lang::Type::Infer,
+                        },
+                        e.span(),
+                    )
+                },
+            )
+            .boxed();
+
+        // Parse logical OR operator.
+        let logical_or = logical_and
+            .clone()
+            .foldl_with(
+                logical_or_ops().then(logical_and).repeated(),
+                |lhs, (op, rhs), e| {
+                    Spanned::new(
+                        ast::Expr {
+                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                            ty: lang::Type::Infer,
+                        },
+                        e.span(),
+                    )
+                },
+            )
+            .boxed();
+
+        logical_or
     })
 }
 
@@ -322,7 +374,10 @@ pub fn unary_ops<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    choice((just(lexer::Token::Operator("-")).to(lang::UnaryOp::Neg),))
+    choice((
+        just(lexer::Token::Operator("-")).to(lang::UnaryOp::Neg),
+        just(lexer::Token::Operator("!")).to(lang::UnaryOp::Not),
+    ))
 }
 
 /// A parser for addition and subtraction operators in the language.
@@ -349,6 +404,43 @@ where
         just(lexer::Token::Operator("*")).to(lang::BinaryOp::Mul),
         just(lexer::Token::Operator("/")).to(lang::BinaryOp::Div),
     ))
+}
+
+/// A parser for relational operators in the language.
+#[must_use]
+pub fn relational_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
+{
+    choice((
+        just(lexer::Token::Operator("==")).to(lang::BinaryOp::Eq),
+        just(lexer::Token::Operator("!=")).to(lang::BinaryOp::Neq),
+        just(lexer::Token::Operator("<")).to(lang::BinaryOp::Lt),
+        just(lexer::Token::Operator("<=")).to(lang::BinaryOp::Lte),
+        just(lexer::Token::Operator(">")).to(lang::BinaryOp::Gt),
+        just(lexer::Token::Operator(">=")).to(lang::BinaryOp::Gte),
+    ))
+}
+
+/// A parser for logical AND operators in the language.
+#[must_use]
+pub fn logical_and_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
+{
+    just(lexer::Token::Operator("&&")).to(lang::BinaryOp::And)
+}
+
+/// A parser for logical OR operators in the language.
+#[must_use]
+pub fn logical_or_ops<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
+{
+    just(lexer::Token::Operator("||")).to(lang::BinaryOp::Or)
 }
 
 /// A parser for boolean literals in the language. Boolean literals are the

@@ -1,0 +1,3 @@
+bool main() {
+    return 1 && 2;  // E018: Logical operator used with non-boolean operands
+}

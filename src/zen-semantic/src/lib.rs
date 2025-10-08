@@ -101,7 +101,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // not, report an error. However, if the expression's type is `Unknown`, we
                     // skip this check to avoid cascading errors because the type inference was
                     // unable to determine the type of the returned expression.
-                    if expr.ty != proto.ret.0 && expr.ty != lang::Type::Unknown {
+                    if expr.ty != proto.ret.0 && expr.ty.is_concrete() {
                         self.errors
                             .emit_return_type_mismatch_error(proto, stmt_span, expr.ty);
                     }
@@ -128,14 +128,14 @@ impl<'src> SemanticAnalysis<'src> {
                         }
 
                         // Check that the expression type matches the variable's declared type.
-                        if expr.ty != var.ty && expr.ty != lang::Type::Unknown {
+                        if expr.ty != var.ty && expr.ty.is_concrete() {
                             self.errors
                                 .emit_type_mismatch_in_assignment_error(var, expr, span);
                         }
 
                         // Ensure that compound assignments are not used on boolean variables.
                         if let Some(op) = op {
-                            if var.ty == lang::Type::Bool {
+                            if var.ty.is_boolean() {
                                 self.errors
                                     .emit_bool_compound_assignment_error(var, *op, span);
                             }
@@ -164,33 +164,61 @@ impl<'src> SemanticAnalysis<'src> {
         self.infer_expr(expr);
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
-                // Verify that both sides of the binary operation are of compatible types.
+                let has_boolean_operand = lhs.ty.is_boolean() || rhs.ty.is_boolean();
                 self.check_expr(lhs, false);
                 self.check_expr(rhs, false);
+
+                // Verify that both sides of the binary operation have the same type. In the
+                // future, we may want to implement type coercion rules here.
                 if lhs.ty != rhs.ty {
-                    self.errors
-                        .emit_binary_op_type_mismatch_error(*op, lhs, rhs, span);
+                    if op.is_comparison() {
+                        self.errors
+                            .emit_comparison_with_incompatible_types_error(*op, lhs, rhs, span);
+                    } else {
+                        self.errors
+                            .emit_binary_op_type_mismatch_error(*op, lhs, rhs, span);
+                    }
                 }
 
                 // Ensure that boolean values are not used in arithmetic operations.
-                if lhs.ty == lang::Type::Bool || rhs.ty == lang::Type::Bool {
+                if has_boolean_operand && !op.accept_boolean_operands() {
                     self.errors
                         .emit_boolean_arithmetic_error(*op, lhs, rhs, span);
                 }
+
+                // Ensure that logical operators are only used with boolean operands.
+                if !has_boolean_operand && op.requires_boolean_operands() {
+                    self.errors
+                        .emit_logical_operator_with_non_boolean_error(*op, lhs, rhs, span);
+                }
             }
             ast::ExprKind::Unary(op, rhs) => {
-                // Disallow negation of boolean types.
-                if *op == lang::UnaryOp::Neg && rhs.ty == lang::Type::Bool {
-                    self.errors.emit_negation_of_non_numeric_type_error(rhs);
-                }
+                match op {
+                    lang::UnaryOp::Neg => {
+                        // Disallow negation of boolean types.
+                        if *op == lang::UnaryOp::Neg && rhs.ty.is_boolean() {
+                            self.errors.emit_negation_of_non_numeric_type_error(rhs);
+                        }
 
-                // Recursively check the inner expression, passing along whether we are in
-                // a negated context or not. This is needed to correctly handle cases like
-                // double negation and to ensure proper overflow/underflow checks.
-                if *op == lang::UnaryOp::Neg {
-                    self.check_expr(rhs, !negated);
-                } else {
-                    self.check_expr(rhs, negated);
+                        // Recursively check the inner expression, passing along whether we are in
+                        // a negated context or not. This is needed to correctly handle cases like
+                        // double negation and to ensure proper overflow/underflow checks.
+                        if *op == lang::UnaryOp::Neg {
+                            self.check_expr(rhs, !negated);
+                        } else {
+                            self.check_expr(rhs, negated);
+                        }
+                    }
+                    lang::UnaryOp::Not => {
+                        // Verify that the operand of the logical NOT operator is a boolean. This
+                        // avoids nonsensical expressions like `!42` or `!x` where `x` is an
+                        // integer. This is allowed in C-like languages, but not in Zen since it
+                        // has a strong type system.
+                        self.check_expr(rhs, false);
+                        if !rhs.ty.is_boolean() {
+                            self.errors.emit_logical_not_with_non_boolean_error(rhs);
+                        }
+                    }
                 }
             }
             ast::ExprKind::FunctionCall(ident, args) => {
@@ -212,7 +240,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                     // Check that each argument type matches the corresponding parameter type.
                     for (arg, param) in args.iter_mut().zip(&func.params) {
-                        if arg.ty != param.ty && arg.ty != lang::Type::Unknown {
+                        if arg.ty != param.ty && arg.ty.is_concrete() {
                             self.errors.emit_argument_type_mismatch_error(
                                 param,
                                 arg,
@@ -305,25 +333,52 @@ impl<'src> SemanticAnalysis<'src> {
     fn infer_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
         if expr.ty == lang::Type::Infer {
             match &mut expr.kind {
-                ast::ExprKind::Binary(_, lhs, rhs) => {
+                ast::ExprKind::Binary(op, lhs, rhs) => {
                     // Recursively infer types of the left and right expressions if needed.
                     self.infer_expr(lhs);
                     self.infer_expr(rhs);
 
-                    // If both sides have the same non-infer type, set the expression's type
-                    // to that. However, if either side is still `Infer` or doesn't match, we
-                    // set the type to `Unknown` to indicate a type inference failure.
-                    // TODO: Implement proper type coercion rules here.
-                    if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
-                        expr.ty = lhs.ty;
-                    } else {
-                        expr.ty = lang::Type::Unknown;
+                    match op {
+                        lang::BinaryOp::And
+                        | lang::BinaryOp::Or
+                        | lang::BinaryOp::Eq
+                        | lang::BinaryOp::Neq
+                        | lang::BinaryOp::Lt
+                        | lang::BinaryOp::Lte
+                        | lang::BinaryOp::Gt
+                        | lang::BinaryOp::Gte => {
+                            // Logical and comparison operators always yield a boolean result.
+                            expr.ty = lang::Type::Bool;
+                        }
+
+                        lang::BinaryOp::Add
+                        | lang::BinaryOp::Sub
+                        | lang::BinaryOp::Mul
+                        | lang::BinaryOp::Div => {
+                            // If both sides have the same non-infer type, set the expression's type
+                            // to that. However, if either side is still `Infer` or doesn't match,
+                            // we set the type to `Unknown` to indicate a type inference failure.
+                            // TODO: Implement proper type coercion rules here.
+                            if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
+                                expr.ty = lhs.ty;
+                            } else {
+                                expr.ty = lang::Type::Unknown;
+                            }
+                        }
                     }
                 }
-                ast::ExprKind::Unary(_, rhs) => {
-                    // Recursively infer the type of the inner expression if needed.
-                    self.infer_expr(rhs);
-                    expr.ty = rhs.ty;
+                ast::ExprKind::Unary(op, rhs) => {
+                    match op {
+                        lang::UnaryOp::Neg => {
+                            // Recursively infer the type of the inner expression if needed.
+                            self.infer_expr(rhs);
+                            expr.ty = rhs.ty;
+                        }
+                        lang::UnaryOp::Not => {
+                            // The logical NOT operator always yields a boolean result.
+                            expr.ty = lang::Type::Bool;
+                        }
+                    }
                 }
                 ast::ExprKind::FunctionCall(_ident, _) => {
                     if let Some(func) = self.scopes.get_function(_ident.name) {

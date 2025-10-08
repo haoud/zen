@@ -1,0 +1,3 @@
+bool main() {
+    return 5 == true;    // E020: Comparison operator used with incompatible types
+}

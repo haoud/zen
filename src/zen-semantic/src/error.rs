@@ -65,6 +65,15 @@ pub enum SemanticErrorKind {
     /// The type of an argument in a function call does not match the type of the corresponding
     /// parameter in the function definition.
     ArgumentTypeMismatch = 17,
+
+    /// Using logical operators (`and`, `or`) with non-boolean operands.
+    LogicalOperatorWithNonBoolean = 18,
+
+    /// Using the logical not operator (`not`) with a non-boolean operand.
+    LogicalNotWithNonBoolean = 19,
+
+    /// Using comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) with incompatible types.
+    ComparisonWithIncompatibleTypes = 20,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -252,19 +261,19 @@ impl<'src> SemanticDiagnostic<'src> {
                 ));
 
         // Add a specific label if the left operand is a boolean.
-        if lhs.ty == lang::Type::Bool {
+        if lhs.ty.is_boolean() {
             report = report.with_label(
                 ariadne::Label::new((self.filename, lhs.span().into_range()))
-                    .with_message("Left operand type is boolean")
+                    .with_message("Left operand type is 'bool'")
                     .with_color(Color::Cyan),
             );
         }
 
         // Add a specific label if the right operand is a boolean.
-        if rhs.ty == lang::Type::Bool {
+        if rhs.ty.is_boolean() {
             report = report.with_label(
                 ariadne::Label::new((self.filename, rhs.span().into_range()))
-                    .with_message("Right operand type is boolean")
+                    .with_message("Right operand type is 'bool'")
                     .with_color(Color::Red),
             );
         }
@@ -568,6 +577,86 @@ impl<'src> SemanticDiagnostic<'src> {
                             param.ty, param.name
                         ))
                         .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when logical operators (`&&`, `||`) are used with non-boolean operands.
+    #[inline]
+    pub fn emit_logical_operator_with_non_boolean_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::LogicalOperatorWithNonBoolean as u32)
+                .with_message(format!(
+                    "logical operator '{op}' requires boolean operands: left is '{}', right is '{}'",
+                    lhs.ty, rhs.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, lhs.span().into_range()))
+                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, rhs.span().into_range()))
+                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when the logical not operator (`!`) is used with a non-boolean operand.
+    #[inline]
+    pub fn emit_logical_not_with_non_boolean_error(&mut self, expr: &Spanned<ast::Expr<'src>>) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, expr.span().into_range()))
+                .with_code(SemanticErrorKind::LogicalOperatorWithNonBoolean as u32)
+                .with_message(format!(
+                    "logical operator '!' requires a boolean operand: found '{}'",
+                    expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Operand is of type '{}'", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) are used
+    /// with incompatible types (e.g., comparing a boolean with an integer).
+    #[inline]
+    pub fn emit_comparison_with_incompatible_types_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::ComparisonWithIncompatibleTypes as u32)
+                .with_message(format!(
+                    "comparison operator '{op}' requires compatible operand types: left is '{}', right is '{}'",
+                    lhs.ty, rhs.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, lhs.span().into_range()))
+                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, rhs.span().into_range()))
+                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
                 )
                 .finish(),
         );

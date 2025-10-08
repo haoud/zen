@@ -1,0 +1,3 @@
+bool main() {
+    return !42;  // E019: Logical not operator used with non-boolean operand
+}

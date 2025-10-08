@@ -101,6 +101,20 @@ pub enum Type {
     Int,
 }
 
+impl Type {
+    /// Check if the type is a boolean type.
+    #[must_use]
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Type::Bool)
+    }
+
+    /// Check if the type is an concrete type (i.e., not `Unknown` or `Infer`).
+    #[must_use]
+    pub fn is_concrete(&self) -> bool {
+        !matches!(self, Type::Unknown | Type::Infer)
+    }
+}
+
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -115,13 +129,85 @@ impl std::fmt::Display for Type {
 /// The different binary operators supported by the language.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
+    /// Addition operator `+`
     Add,
+
+    /// Subtraction operator `-`
     Sub,
+
+    /// Multiplication operator `*`
     Mul,
+
+    /// Division operator `/`
     Div,
+
+    /// Equality operator `==`
+    Eq,
+
+    /// Inequality operator `!=`
+    Neq,
+
+    /// Less than operator `<`
+    Lt,
+
+    /// Less than or equal to operator `<=`
+    Lte,
+
+    /// Greater than operator `>`
+    Gt,
+
+    /// Greater than or equal to operator `>=`
+    Gte,
+
+    /// Logical AND operator `&&`
+    And,
+
+    /// Logical OR operator `||`
+    Or,
 }
 
 impl BinaryOp {
+    /// Check if the binary operator can accept boolean operands. This includes the equality,
+    /// inequality, logical AND, and logical OR operators. Other operators, such as arithmetic
+    /// and comparison operators, do not accept boolean operands.
+    #[must_use]
+    pub fn accept_boolean_operands(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Eq | BinaryOp::Neq | BinaryOp::And | BinaryOp::Or
+        )
+    }
+
+    /// Check if the binary operator requires boolean operands. This includes the logical
+    /// AND and logical OR operators.
+    #[must_use]
+    pub fn requires_boolean_operands(&self) -> bool {
+        matches!(self, BinaryOp::And | BinaryOp::Or)
+    }
+
+    /// Check if the binary operator is a comparison operator. This includes the equality,
+    /// inequality, less than, less than or equal to, greater than, and greater than
+    /// or equal to operators.
+    #[must_use]
+    pub fn is_comparison(&self) -> bool {
+        matches!(
+            self,
+            BinaryOp::Eq
+                | BinaryOp::Neq
+                | BinaryOp::Lt
+                | BinaryOp::Lte
+                | BinaryOp::Gt
+                | BinaryOp::Gte
+        )
+    }
+
+    /// Check if the binary operator is a logical operator. This includes the logical
+    /// AND and logical OR operators.
+    #[must_use]
+    pub fn is_logical(&self) -> bool {
+        matches!(self, BinaryOp::And | BinaryOp::Or)
+    }
+
     /// Get the string representation of the binary operator.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -130,6 +216,14 @@ impl BinaryOp {
             BinaryOp::Sub => "-",
             BinaryOp::Mul => "*",
             BinaryOp::Div => "/",
+            BinaryOp::Eq => "==",
+            BinaryOp::Neq => "!=",
+            BinaryOp::Lt => "<",
+            BinaryOp::Lte => "<=",
+            BinaryOp::Gt => ">",
+            BinaryOp::Gte => ">=",
+            BinaryOp::And => "&&",
+            BinaryOp::Or => "||",
         }
     }
 }
@@ -144,6 +238,7 @@ impl std::fmt::Display for BinaryOp {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     Neg,
+    Not,
 }
 
 impl UnaryOp {
@@ -152,6 +247,7 @@ impl UnaryOp {
     pub fn as_str(&self) -> &str {
         match self {
             UnaryOp::Neg => "-",
+            UnaryOp::Not => "!",
         }
     }
 }
