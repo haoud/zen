@@ -9,19 +9,19 @@ clap = { version = "4.5.4", features = ["cargo"] }
 ariadne = { workspace = true }
 chumsky = { workspace = true }
 
-lexer = { path = "src/zen-lexer", package = "zen-lexer" }
-parser = { path = "src/zen-parser", package = "zen-parser" }
-semantic = { path = "src/zen-semantic", package = "zen-semantic" }
-codegen = { path = "src/zen-codegen", package = "zen-codegen" }
+lexer = { path = "crates/zen-lexer", package = "zen-lexer" }
+parser = { path = "crates/zen-parser", package = "zen-parser" }
+semantic = { path = "crates/zen-semantic", package = "zen-semantic" }
+codegen = { path = "crates/zen-codegen", package = "zen-codegen" }
 
 [workspace]
 members = [
-  "src/zen-ast",
-  "src/zen-codegen",
-  "src/zen-lang",
-  "src/zen-lexer",
-  "src/zen-parser",
-  "src/zen-semantic",
+  "crates/zen-ast",
+  "crates/zen-codegen",
+  "crates/zen-lang",
+  "crates/zen-lexer",
+  "crates/zen-parser",
+  "crates/zen-semantic",
 ]
 
 [workspace.dependencies]
