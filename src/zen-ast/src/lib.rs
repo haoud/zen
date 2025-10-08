@@ -23,6 +23,16 @@ pub struct Literal<'src> {
     pub ty: Type,
 }
 
+/// A function parameter. Function parameters are used to define the parameters that
+/// a function takes. Each parameter is represented by an identifier and a type, and
+/// can be marked as mutable if the parameter can be modified within the function body.
+#[derive(Debug, Clone, Hash)]
+pub struct FunctionParameter<'src> {
+    pub ident: Spanned<Identifier<'src>>,
+    pub ty: Spanned<Type>,
+    pub mutable: bool,
+}
+
 /// A function prototype. A function prototype is a declaration of a function
 /// that specifies the name of the function, the list of parameters that the
 /// function takes, and the return type of the function. Function prototypes
@@ -33,6 +43,9 @@ pub struct Literal<'src> {
 pub struct FunctionPrototype<'src> {
     /// The name of the function.
     pub ident: Spanned<Identifier<'src>>,
+
+    /// The list of parameters that the function takes.
+    pub params: Vec<Spanned<FunctionParameter<'src>>>,
 
     /// The return type of the function.
     pub ret: Spanned<Type>,
@@ -147,6 +160,10 @@ pub enum ExprKind<'src> {
 
     /// An identifier. The element is the identifier being referenced.
     Identifier(Spanned<Identifier<'src>>),
+
+    // A function call. The first element is the identifier of the function being called,
+    // and the second element is a list of expressions that are passed as arguments to the function
+    FunctionCall(Box<Spanned<Identifier<'src>>>, Vec<Spanned<Expr<'src>>>),
 
     /// A error that is used to indicate a parsing error. This variant should not be present
     /// in the final AST that will be passed to the code generator.

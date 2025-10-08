@@ -54,6 +54,17 @@ pub enum SemanticErrorKind {
 
     /// Attempted to use a compound assignment (like `+=`, `-=`, etc.) on a boolean variable.
     BoolCompoundAssignment = 14,
+
+    /// Call to an undefined function.
+    UndefinedFunction = 15,
+
+    /// The number of arguments in a function call does not match the number of parameters
+    /// in the function definition.
+    ArgumentCountMismatch = 16,
+
+    /// The type of an argument in a function call does not match the type of the corresponding
+    /// parameter in the function definition.
+    ArgumentTypeMismatch = 17,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -468,6 +479,94 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, variable.span().into_range()))
                         .with_message("Boolean variable declared here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a unknown function is called, given the spanned identifier
+    /// of the function.
+    #[inline]
+    pub fn emit_undefined_function_error(&mut self, identifier: &Spanned<ast::Identifier<'src>>) {
+        let span = identifier.span();
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::UndefinedFunction as u32)
+                .with_message(format!("call to undefined function '{}'", identifier.name))
+                .with_label(
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!(
+                            "function '{}' is not declared in this scope",
+                            identifier.name
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when the number of arguments in a function call does not match the
+    /// number of parameters in the function definition. It takes the spanned identifier
+    /// of the function being called, the expected number of arguments, the actual number
+    /// of arguments, and the span of the entire function call expression.
+    #[inline]
+    pub fn emit_argument_count_mismatch_error(
+        &mut self,
+        identifier: &Spanned<ast::Identifier<'src>>,
+        expected: usize,
+        actual: usize,
+        call_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
+                .with_code(SemanticErrorKind::ArgumentCountMismatch as u32)
+                .with_message(format!(
+                    "argument count mismatch in call to function '{}': expected {}, found {}",
+                    identifier.name, expected, actual
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, identifier.span().into_range()))
+                        .with_message(format!(
+                            "function '{}' is called with {} arguments, but it expects {}",
+                            identifier.name, actual, expected
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when the type of an argument in a function call does not match
+    /// the type of the corresponding parameter in the function definition. It takes
+    /// the parameter variable, the spanned argument expression, and the span of the
+    /// entire function call expression.
+    #[inline]
+    pub fn emit_argument_type_mismatch_error(
+        &mut self,
+        param: &symbol::Variable<'src>,
+        arg: &Spanned<ast::Expr<'src>>,
+        param_span: lang::Span,
+        call_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
+                .with_code(SemanticErrorKind::ArgumentTypeMismatch as u32)
+                .with_message(format!(
+                    "argument type mismatch in call to function: expected '{}', found '{}'",
+                    param.ty, arg.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, arg.span().into_range()))
+                        .with_message(format!("Found type '{}' in argument", arg.ty))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, param_span.into_range()))
+                        .with_message(format!(
+                            "Expected type '{}' for parameter '{}'",
+                            param.ty, param.name
+                        ))
                         .with_color(Color::Cyan),
                 )
                 .finish(),

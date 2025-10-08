@@ -44,7 +44,23 @@ impl<'src> SemanticAnalysis<'src> {
         // Check each function's body for semantic correctness.
         for function in funcs {
             let span = function.span();
+
+            self.scopes.enter_scope();
+            for param in &function.prototype.params {
+                self.scopes.insert_variable(
+                    &mut self.errors,
+                    Spanned::new(
+                        symbol::Variable {
+                            mutable: param.mutable,
+                            name: param.ident.name,
+                            ty: param.ty.0,
+                        },
+                        param.span(),
+                    ),
+                );
+            }
             self.check_statements(&mut function.0.prototype, &mut function.0.body, span);
+            self.scopes.exit_scope();
         }
     }
 
@@ -177,6 +193,40 @@ impl<'src> SemanticAnalysis<'src> {
                     self.check_expr(rhs, negated);
                 }
             }
+            ast::ExprKind::FunctionCall(ident, args) => {
+                // Check each argument expression for semantic correctness.
+                for arg in args.iter_mut() {
+                    self.check_expr(arg, false);
+                }
+
+                if let Some(func) = self.scopes.get_function(ident.name) {
+                    // Check that the number of arguments matches the function's parameter count.
+                    if args.len() != func.params.len() {
+                        self.errors.emit_argument_count_mismatch_error(
+                            ident,
+                            func.params.len(),
+                            args.len(),
+                            span,
+                        );
+                    }
+
+                    // Check that each argument type matches the corresponding parameter type.
+                    for (arg, param) in args.iter_mut().zip(&func.params) {
+                        if arg.ty != param.ty && arg.ty != lang::Type::Unknown {
+                            self.errors.emit_argument_type_mismatch_error(
+                                param,
+                                arg,
+                                param.span(),
+                                span,
+                            );
+                        }
+                    }
+
+                    expr.ty = func.ret;
+                } else {
+                    self.errors.emit_undefined_function_error(ident);
+                }
+            }
             ast::ExprKind::Literal(x) => {
                 // Ensure that integer literals fit within the bounds of the integer type.
                 match x.ty {
@@ -274,6 +324,16 @@ impl<'src> SemanticAnalysis<'src> {
                     // Recursively infer the type of the inner expression if needed.
                     self.infer_expr(rhs);
                     expr.ty = rhs.ty;
+                }
+                ast::ExprKind::FunctionCall(_ident, _) => {
+                    if let Some(func) = self.scopes.get_function(_ident.name) {
+                        expr.ty = func.ret;
+                    } else {
+                        // If the function is not found, we set the expression's type to `Unknown`
+                        // but we do not emit an error here, as the function call will be checked
+                        // later in the `check_expr` method that will handle the error reporting.
+                        expr.ty = lang::Type::Unknown;
+                    }
                 }
                 ast::ExprKind::Identifier(identifier) => {
                     // Identifier type is always explicited during their declaration. So we can

@@ -150,12 +150,31 @@ impl<'src> Scope<'src> {
                 func.span(),
             );
         } else {
+            // Convert the function parameters to variable symbols.
+            let params = func
+                .0
+                .prototype
+                .params
+                .iter()
+                .map(|param| {
+                    Spanned::new(
+                        symbol::Variable {
+                            name: param.ident.name,
+                            ty: param.ty.0,
+                            mutable: false,
+                        },
+                        param.span(),
+                    )
+                })
+                .collect::<Vec<_>>();
+
             self.current_scope_mut()
                 .symbols_mut()
                 .insert_function(Spanned::new(
                     symbol::Function {
                         name: func.0.prototype.ident.name,
                         ret: func.0.prototype.ret.0,
+                        params,
                     },
                     func.span(),
                 ));

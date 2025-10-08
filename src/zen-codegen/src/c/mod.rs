@@ -118,6 +118,21 @@ impl Codegen {
         self.code += func.prototype.ident.name;
         self.code += "(";
 
+        // Generate the function parameters
+        let args = &func
+            .prototype
+            .params
+            .iter()
+            .map(|param| {
+                let mutable = if !param.mutable { "const " } else { "" };
+                let ty = self.generate_type(&param.ty);
+                let name = &param.ident.name;
+                format!("{mutable}{ty} {name}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.code += &args;
+
         // If this is a prototype, we need to add a semicolon at the
         // end of the function declaration.
         if prototype {
@@ -194,6 +209,14 @@ impl Codegen {
                 let expr = self.generate_expr(expr);
                 let op = op.as_str();
                 format!("({op}{expr})")
+            }
+            ast::ExprKind::FunctionCall(ident, args) => {
+                let args = args
+                    .iter()
+                    .map(|arg| self.generate_expr(arg))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}({})", ident.name, args)
             }
             ast::ExprKind::Error(..) => unreachable!(),
         }

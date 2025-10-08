@@ -1,0 +1,7 @@
+int main() {
+    return add(4);  // E016: Argument count mismatch in call to function 'add'
+}
+
+int add(a: int, b: int) {
+    return a + b;
+}

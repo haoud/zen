@@ -5,16 +5,27 @@ use crate::lang::{self, Spanned};
 /// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variable<'src> {
+    /// The name of the variable.
     pub name: &'src str,
+
+    /// The type of the variable.
     pub ty: lang::Type,
+
+    /// Whether the variable is mutable or not.
     pub mutable: bool,
 }
 
 /// A function symbol
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Hash)]
 
 pub struct Function<'src> {
+    /// The name of the function.
     pub name: &'src str,
+
+    /// A list of parameters for the function.
+    pub params: Vec<Spanned<Variable<'src>>>,
+
+    /// The return type of the function.
     pub ret: lang::Type,
 }
 

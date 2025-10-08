@@ -27,26 +27,42 @@ pub fn func_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    let ret_type = builtin_type_parser();
-    let name = ident_parser();
-    let body = stmt_parser().repeated().collect().delimited_by(
-        just(lexer::Token::Delimiter("{")),
-        just(lexer::Token::Delimiter("}")),
-    );
+    // A parser for function parameters, which are of the form `<ident> : <type>`. Multiple
+    // parameters are separated by commas. For example: `a: int, b: int`.
+    let parameters = ident_parser()
+        .then_ignore(just(lexer::Token::Delimiter(":")))
+        .then(builtin_type_parser())
+        .map_with(|(name, ty), e| {
+            Spanned::new(
+                ast::FunctionParameter {
+                    mutable: false,
+                    ident: name,
+                    ty,
+                },
+                e.span(),
+            )
+        })
+        .separated_by(just(lexer::Token::Delimiter(",")))
+        .collect();
 
-    ret_type
-        .then(name)
-        .then_ignore(
-            just(lexer::Token::Delimiter("(")).ignore_then(just(lexer::Token::Delimiter(")"))),
-        )
-        .then(body)
-        .map_with(|((ty, name), body), e| {
+    builtin_type_parser()
+        .then(ident_parser())
+        .then(parameters.delimited_by(
+            just(lexer::Token::Delimiter("(")),
+            just(lexer::Token::Delimiter(")")),
+        ))
+        .then(stmt_parser().repeated().collect().delimited_by(
+            just(lexer::Token::Delimiter("{")),
+            just(lexer::Token::Delimiter("}")),
+        ))
+        .map_with(|(((ty, name), params), body), e| {
             Spanned::new(
                 ast::Function {
                     prototype: Spanned::new(
                         ast::FunctionPrototype {
                             ident: name,
                             ret: ty,
+                            params,
                         },
                         e.span(),
                     ),
@@ -187,6 +203,46 @@ where
             )
         };
 
+        // An identifier is a sequence of characters that represents a name in the language.
+        // Identifiers are used to name variables, functions, classes, etc.
+        let identifier = ident_parser().map_with(|ident, e| {
+            Spanned::new(
+                ast::Expr {
+                    kind: ast::ExprKind::Identifier(ident),
+                    ty: lang::Type::Infer,
+                },
+                e.span(),
+            )
+        });
+
+        // A list of expressions separated by commas. This is mostly useful for function
+        // call arguments, but can also be used in other places where a list of expressions
+        // is expected.
+        let items = expr
+            .clone()
+            .separated_by(just(lexer::Token::Delimiter(",")))
+            .collect();
+
+        // A function call is an identifier followed by a list of arguments enclosed
+        // in parentheses. For example: `foo(a, b + 2)`. The arguments are optional,
+        // so a function call can also be just an identifier followed by empty
+        // parentheses, like `foo()`.
+        let call = ident_parser()
+            .then(items.delimited_by(
+                just(lexer::Token::Delimiter("(")),
+                just(lexer::Token::Delimiter(")")),
+            ))
+            .map_with(|(function, args), e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::FunctionCall(Box::new(function), args),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            })
+            .boxed();
+
         // An atom is either a literal or a parenthesized expression. They have the maximum
         // precedence in the expression hierarchy, since they cannot be broken down any further,
         // called "atoms" for that reason.
@@ -200,15 +256,8 @@ where
                     e.span(),
                 )
             })
-            .or(ident_parser().map_with(|ident, e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::Identifier(ident),
-                        ty: lang::Type::Infer,
-                    },
-                    e.span(),
-                )
-            }))
+            .or(call)
+            .or(identifier)
             .or(bool_value_parser())
             .or(expr.delimited_by(
                 just(lexer::Token::Delimiter("(")),
@@ -220,7 +269,7 @@ where
         // binary operators, so we parse them first.
         let unary = unary_ops()
             .repeated()
-            .foldr_with(atom.clone(), |op, rhs, e| {
+            .foldr_with(atom, |op, rhs, e| {
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Unary(op, Box::new(rhs)),
