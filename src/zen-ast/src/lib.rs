@@ -1,4 +1,4 @@
-use crate::lang::{self, Span, Spanned, Type};
+use lang::{self, BinaryOp, Span, Spanned, Type, UnaryOp};
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,
@@ -134,15 +134,11 @@ pub enum ExprKind<'src> {
 
     /// A binary operation. The first element is the operator, the second element is the left-hand
     /// side expression, and the third element is the right-hand side expression.
-    Binary(
-        lang::BinaryOp,
-        Box<Spanned<Expr<'src>>>,
-        Box<Spanned<Expr<'src>>>,
-    ),
+    Binary(BinaryOp, Box<Spanned<Expr<'src>>>, Box<Spanned<Expr<'src>>>),
 
     /// A unary operation. The first element is the operator, and the second element is the
     /// expression being operated on.
-    Unary(lang::UnaryOp, Box<Spanned<Expr<'src>>>),
+    Unary(UnaryOp, Box<Spanned<Expr<'src>>>),
 
     /// An identifier. The element is the identifier being referenced.
     Identifier(Spanned<Identifier<'src>>),

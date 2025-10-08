@@ -4,10 +4,30 @@ name = "zen"
 version = "0.1.0"
 
 [dependencies]
-ariadne = {version = "0.5", features = ["auto-color"]}
-chumsky = {version = "0.11"}
-clap = {version = "4.5.4", features = ["cargo"]}
+clap = { version = "4.5.4", features = ["cargo"] }
 
-[lints.clippy]
-all = "warn"
+ariadne = { workspace = true }
+chumsky = { workspace = true }
+
+lexer = { path = "src/zen-lexer", package = "zen-lexer" }
+parser = { path = "src/zen-parser", package = "zen-parser" }
+semantic = { path = "src/zen-semantic", package = "zen-semantic" }
+codegen = { path = "src/zen-codegen", package = "zen-codegen" }
+
+[workspace]
+members = [
+  "src/zen-ast",
+  "src/zen-codegen",
+  "src/zen-lang",
+  "src/zen-lexer",
+  "src/zen-parser",
+  "src/zen-semantic",
+]
+
+[workspace.dependencies]
+ariadne = { version = "0.5", features = ["auto-color"] }
+chumsky = { version = "0.11" }
+
+[workspace.lints.clippy]
 pedantic = "warn"
+all = "warn"

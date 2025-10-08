@@ -1,8 +1,4 @@
-use crate::{
-    ast,
-    codegen::c::scope::Scope,
-    lang::{self, Spanned},
-};
+use crate::c::scope::Scope;
 
 pub mod scope;
 
@@ -235,7 +231,7 @@ impl Default for Codegen {
 /// code generator, generate the function prototypes and bodies, and return the generated
 /// C code as a string.
 #[must_use]
-pub fn generate(funcs: &[Spanned<ast::Function>]) -> String {
+pub fn generate(funcs: &[lang::Spanned<ast::Function>]) -> String {
     let mut codegen = Codegen::new();
     codegen.generate_comment_header();
     codegen.generate_includes();

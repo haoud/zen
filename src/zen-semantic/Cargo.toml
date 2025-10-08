@@ -1,0 +1,12 @@
+[package]
+name = "zen-semantic"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ariadne = { workspace = true }
+chumsky = { workspace = true }
+
+ast = { path = "../zen-ast", package = "zen-ast" }
+lang = { path = "../zen-lang", package = "zen-lang" }
+parser = { path = "../zen-parser", package = "zen-parser" }

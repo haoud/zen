@@ -1,0 +1,7 @@
+[package]
+edition = "2024"
+name = "zen-ast"
+version = "0.1.0"
+
+[dependencies]
+lang = { path = "../zen-lang", package = "zen-lang" }

@@ -1,0 +1,8 @@
+[package]
+name = "zen-codegen"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lang = { path = "../zen-lang", package = "zen-lang" }
+ast = { path = "../zen-ast", package = "zen-ast" }

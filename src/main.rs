@@ -1,14 +1,7 @@
-use crate::semantic::SemanticAnalysis;
 use ariadne::Source;
 use chumsky::prelude::*;
 
-pub mod ast;
-pub mod codegen;
 pub mod config;
-pub mod lang;
-pub mod lexer;
-pub mod parser;
-pub mod semantic;
 
 fn main() {
     let matches = clap::command!("zen")
@@ -117,7 +110,7 @@ fn translate(args: &clap::ArgMatches) {
     }
 
     let mut functions = ast.unwrap();
-    let mut semantic_analyzer = SemanticAnalysis::new(path);
+    let mut semantic_analyzer = semantic::SemanticAnalysis::new(path);
     semantic_analyzer.check_functions(&mut functions);
 
     // If there were semantic analysis errors, print them and exit early.

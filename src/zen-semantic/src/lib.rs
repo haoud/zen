@@ -1,9 +1,9 @@
 use chumsky::span::Span;
 
-use crate::{
+use crate::error::SemanticDiagnostic;
+use {
     ast,
     lang::{self, Spanned},
-    semantic::error::SemanticDiagnostic,
 };
 
 pub mod error;

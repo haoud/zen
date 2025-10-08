@@ -8,7 +8,7 @@ pub static DEFAULT_INPUT_NAME: &str = "main.zen";
 /// type `cargo run` and it will compile the `tests/main.zen` file without
 /// needing to provide any additional arguments.
 #[cfg(debug_assertions)]
-pub static DEFAULT_INPUT_NAME: &str = "tests/main.zen";
+pub static DEFAULT_INPUT_NAME: &str = "examples/demo.zen";
 
 /// The default name of the output file. It use the traditional `a.out`
 /// name, that comes from times when the most common binary format used

@@ -8,8 +8,8 @@
 //! The code here is short and quite simple because the `chumsky` library abstracts away most of
 //! the complexity of writing a lexer, which is nice as it allows us to focus on the language
 //! itself rather than some "boring" implementation details.
-use crate::lang::{Literal, LiteralBase, Span, Spanned};
 use chumsky::prelude::*;
+use lang::{Literal, LiteralBase, Span, Spanned};
 
 /// A token is a single unit of the input string that represents a single entity in the language.
 /// For example, an identifier, a keyword, an operator...

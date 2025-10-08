@@ -1,0 +1,11 @@
+[package]
+name = "zen-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = { workspace = true }
+
+ast = { path = "../zen-ast", package = "zen-ast" }
+lang = { path = "../zen-lang", package = "zen-lang" }
+lexer = { path = "../zen-lexer", package = "zen-lexer" }

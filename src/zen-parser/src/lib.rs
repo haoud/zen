@@ -1,13 +1,9 @@
-use crate::{
-    ast,
-    lang::{self, Span, Spanned},
-    lexer::Token,
-};
 use chumsky::{input::ValueInput, prelude::*};
+use lang::{Span, Spanned};
 
 /// A type alias for parser errors, which are represented as `extra::Err<Rich<Token, Span>>`. This
 /// is very useful to make the function signatures of the parsers less verbose...
-type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, Span>>;
+type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, lexer::Token<'src>, Span>>;
 
 /// A parser for an entire source file in the language. Currently, a source file only
 /// consists of a list of function definitions, but more top-level constructs can be
@@ -17,7 +13,7 @@ type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, Span>>;
 pub fn file_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Vec<Spanned<ast::Function<'src>>>, ParserError<'tokens, 'src>>
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     func_parser().repeated().collect()
 }
@@ -29,18 +25,20 @@ where
 pub fn func_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Function<'src>>, ParserError<'tokens, 'src>>
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     let ret_type = builtin_type_parser();
     let name = ident_parser();
-    let body = stmt_parser()
-        .repeated()
-        .collect()
-        .delimited_by(just(Token::Delimiter("{")), just(Token::Delimiter("}")));
+    let body = stmt_parser().repeated().collect().delimited_by(
+        just(lexer::Token::Delimiter("{")),
+        just(lexer::Token::Delimiter("}")),
+    );
 
     ret_type
         .then(name)
-        .then_ignore(just(Token::Delimiter("(")).ignore_then(just(Token::Delimiter(")"))))
+        .then_ignore(
+            just(lexer::Token::Delimiter("(")).ignore_then(just(lexer::Token::Delimiter(")"))),
+        )
         .then(body)
         .map_with(|((ty, name), body), e| {
             Spanned::new(
@@ -66,12 +64,15 @@ where
 pub fn block_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, ast::Block<'src>, ParserError<'tokens, 'src>>
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     stmt_parser()
         .repeated()
         .collect()
-        .delimited_by(just(Token::Delimiter("{")), just(Token::Delimiter("}")))
+        .delimited_by(
+            just(lexer::Token::Delimiter("{")),
+            just(lexer::Token::Delimiter("}")),
+        )
         .map(|statements| ast::Block {
             stmts: statements,
             ty: lang::Type::Infer,
@@ -85,12 +86,12 @@ where
 pub fn stmt_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Stmt<'src>>, ParserError<'tokens, 'src>>
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     // Parse a `return` statement, which is an expression of the form `return <expr>;`
-    let return_expr = just(Token::Keyword("return"))
+    let return_expr = just(lexer::Token::Keyword("return"))
         .ignore_then(expr_parser())
-        .then_ignore(just(Token::Delimiter(";")))
+        .then_ignore(just(lexer::Token::Delimiter(";")))
         .map_with(|expr, e| {
             Spanned::new(
                 ast::Stmt {
@@ -100,13 +101,13 @@ where
             )
         });
 
-    let let_expr = just(Token::Keyword("let"))
+    let let_expr = just(lexer::Token::Keyword("let"))
         .ignore_then(ident_parser())
-        .then_ignore(just(Token::Delimiter(":")))
+        .then_ignore(just(lexer::Token::Delimiter(":")))
         .then(builtin_type_parser().or_not())
-        .then_ignore(just(Token::Operator("=")))
+        .then_ignore(just(lexer::Token::Operator("=")))
         .then(expr_parser())
-        .then_ignore(just(Token::Delimiter(";")))
+        .then_ignore(just(lexer::Token::Delimiter(";")))
         .map_with(|((ident, ty), expr), e| {
             Spanned::new(
                 ast::Stmt {
@@ -120,13 +121,13 @@ where
             )
         });
 
-    let var_expr = just(Token::Keyword("var"))
+    let var_expr = just(lexer::Token::Keyword("var"))
         .ignore_then(ident_parser())
-        .then_ignore(just(Token::Delimiter(":")))
+        .then_ignore(just(lexer::Token::Delimiter(":")))
         .then(builtin_type_parser().or_not())
-        .then_ignore(just(Token::Operator("=")))
+        .then_ignore(just(lexer::Token::Operator("=")))
         .then(expr_parser())
-        .then_ignore(just(Token::Delimiter(";")))
+        .then_ignore(just(lexer::Token::Delimiter(";")))
         .map_with(|((ident, ty), expr), e| {
             Spanned::new(
                 ast::Stmt {
@@ -141,9 +142,9 @@ where
         });
 
     let assign_expr = ident_parser()
-        .then_ignore(just(Token::Operator("=")))
+        .then_ignore(just(lexer::Token::Operator("=")))
         .then(expr_parser())
-        .then_ignore(just(Token::Delimiter(";")))
+        .then_ignore(just(lexer::Token::Delimiter(";")))
         .map_with(|(ident, expr), e| {
             Spanned::new(
                 ast::Stmt {
@@ -163,12 +164,12 @@ where
 pub fn expr_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>>
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     recursive(|expr| {
         // Parse a number literal.
         let value = select! {
-            Token::Number(val) = e => Spanned::new(
+            lexer::Token::Number(val) = e => Spanned::new(
                 ast::Literal {
                     ty: lang::Type::Int,
                     value: val,
@@ -200,7 +201,10 @@ where
                 )
             }))
             .or(bool_value_parser())
-            .or(expr.delimited_by(just(Token::Delimiter("(")), just(Token::Delimiter(")"))))
+            .or(expr.delimited_by(
+                just(lexer::Token::Delimiter("(")),
+                just(lexer::Token::Delimiter(")")),
+            ))
             .boxed();
 
         // Parse unary operators (e.g. `-`). These have higher precedence than
@@ -256,9 +260,9 @@ where
 pub fn unary_ops<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, lang::UnaryOp, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    choice((just(Token::Operator("-")).to(lang::UnaryOp::Neg),))
+    choice((just(lexer::Token::Operator("-")).to(lang::UnaryOp::Neg),))
 }
 
 /// A parser for addition and subtraction operators in the language.
@@ -266,11 +270,11 @@ where
 pub fn sum_ops<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     choice((
-        just(Token::Operator("+")).to(lang::BinaryOp::Add),
-        just(Token::Operator("-")).to(lang::BinaryOp::Sub),
+        just(lexer::Token::Operator("+")).to(lang::BinaryOp::Add),
+        just(lexer::Token::Operator("-")).to(lang::BinaryOp::Sub),
     ))
 }
 
@@ -279,11 +283,11 @@ where
 pub fn product_ops<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, lang::BinaryOp, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     choice((
-        just(Token::Operator("*")).to(lang::BinaryOp::Mul),
-        just(Token::Operator("/")).to(lang::BinaryOp::Div),
+        just(lexer::Token::Operator("*")).to(lang::BinaryOp::Mul),
+        just(lexer::Token::Operator("/")).to(lang::BinaryOp::Div),
     ))
 }
 
@@ -294,17 +298,17 @@ where
 pub fn bool_value_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        Token::Keyword("true") = e => Spanned::new(
+        lexer::Token::Keyword("true") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(true, e.span())),
                 ty: lang::Type::Bool,
             },
             e.span()
         ),
-        Token::Keyword("false") = e => Spanned::new(
+        lexer::Token::Keyword("false") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(false, e.span())),
                 ty: lang::Type::Bool,
@@ -321,10 +325,10 @@ where
 pub fn ident_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<ast::Identifier<'src>>, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        Token::Identifier(name) = e => Spanned::new(ast::Identifier { name }, e.span())
+        lexer::Token::Identifier(name) = e => Spanned::new(ast::Identifier { name }, e.span())
     }
 }
 
@@ -336,10 +340,10 @@ where
 pub fn builtin_type_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>> + Clone
 where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
-        Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
+        lexer::Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
+        lexer::Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
     }
 }

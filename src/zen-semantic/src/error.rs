@@ -4,12 +4,9 @@
 //! duplicating code and without having big error handling code in the semantic analyzer
 //! code itself.
 use ariadne::{Color, ReportKind};
+use lang::Spanned;
 
-use crate::{
-    ast,
-    lang::{self, Spanned},
-    semantic::{SemanticError, symbol},
-};
+use crate::{SemanticError, symbol};
 
 /// The different kinds of semantic errors that can occur during semantic analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,10 +1,10 @@
-use crate::{
-    ast,
-    lang::Spanned,
-    semantic::{
+use {
+    crate::{
         error::SemanticDiagnostic,
         symbol::{self, SymbolTable},
     },
+    ast,
+    lang::Spanned,
 };
 
 /// The scope stack for managing variable and function declarations.
