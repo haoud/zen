@@ -1,5 +1,3 @@
-use chumsky::span::Span;
-
 use crate::error::SemanticDiagnostic;
 use {
     ast,
@@ -7,6 +5,7 @@ use {
 };
 
 pub mod error;
+pub mod flow;
 pub mod scope;
 pub mod symbol;
 
@@ -36,15 +35,10 @@ impl<'src> SemanticAnalysis<'src> {
 
     /// Perform semantic analysis on the given list of functions.
     pub fn check_functions(&mut self, funcs: &mut [Spanned<ast::Function<'src>>]) {
-        // Verify that each function has a unique name.
-        for function in funcs.iter() {
-            self.scopes.insert_function(&mut self.errors, function);
-        }
-
-        // Check each function's body for semantic correctness.
-        for function in funcs {
+        for function in funcs.iter_mut() {
             let span = function.span();
 
+            self.scopes.insert_function(&mut self.errors, function);
             self.scopes.enter_scope();
             for param in &function.prototype.params {
                 self.scopes.insert_variable(
@@ -59,52 +53,27 @@ impl<'src> SemanticAnalysis<'src> {
                     ),
                 );
             }
-            self.check_statements(&mut function.0.prototype, &mut function.0.body, span);
+            self.check_statements(&mut function.0.body, span);
             self.scopes.exit_scope();
+
+            // Build and analyze the control flow graph for the function body.
+            flow::analyse_graph(self, function, flow::build_graph(&function.body));
         }
     }
 
     /// Check the statements within a function for semantic correctness.
-    pub fn check_statements(
-        &mut self,
-        proto: &mut Spanned<ast::FunctionPrototype<'src>>,
-        stmts: &mut [Spanned<ast::Stmt<'src>>],
-        span: lang::Span,
-    ) {
-        let mut base_ret_stmt_span: Option<lang::Span> = None;
-
+    pub fn check_statements(&mut self, stmts: &mut [Spanned<ast::Stmt<'src>>], span: lang::Span) {
         for stmt in stmts.iter_mut() {
             // Infer the type of the statement and its contents, as it may affect
             // subsequent checks.
             self.infer_stmt(stmt);
 
-            // If we have already encountered a return statement, any subsequent code
-            // is unreachable and should be reported as an error.
-            if let Some(span) = base_ret_stmt_span {
-                self.errors.emit_unreachable_code_error(span, stmt.span());
-                break;
-            }
-
             let stmt_span = stmt.span();
             match &mut stmt.0.kind {
                 ast::StmtKind::Return(expr) => {
-                    // FIXME: Proper escape analysis to ensure all paths return a value, instead of
-                    // this simple check that does only work because we don't have any control flow
-                    // yet.
-
                     // Check the expression being returned for semantic correctness. If there are
                     // errors, collect them, but still proceed to check the return type.
                     self.check_expr(expr, false);
-                    base_ret_stmt_span = Some(stmt_span);
-
-                    // Check that the return type matches the function's declared return type. If
-                    // not, report an error. However, if the expression's type is `Unknown`, we
-                    // skip this check to avoid cascading errors because the type inference was
-                    // unable to determine the type of the returned expression.
-                    if expr.ty != proto.ret.0 && expr.ty.is_concrete() {
-                        self.errors
-                            .emit_return_type_mismatch_error(proto, stmt_span, expr.ty);
-                    }
                 }
                 ast::StmtKind::Let(_, ty, expr) | ast::StmtKind::Var(_, ty, expr) => {
                     self.check_expr(expr, false);
@@ -116,6 +85,7 @@ impl<'src> SemanticAnalysis<'src> {
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
                 }
+
                 ast::StmtKind::Assign(op, ident, expr) => {
                     self.check_expr(expr, false);
 
@@ -128,7 +98,7 @@ impl<'src> SemanticAnalysis<'src> {
                         }
 
                         // Check that the expression type matches the variable's declared type.
-                        if expr.ty != var.ty && expr.ty.is_concrete() {
+                        if expr.ty != var.ty && expr.ty.is_valid() {
                             self.errors
                                 .emit_type_mismatch_in_assignment_error(var, expr, span);
                         }
@@ -146,14 +116,6 @@ impl<'src> SemanticAnalysis<'src> {
                 }
                 ast::StmtKind::Error(_) => unreachable!(),
             }
-        }
-
-        // Ensure that non-void functions have at least one return statement.
-        if base_ret_stmt_span.is_none() {
-            let start = stmts.first().map_or(span.start(), |s| s.span().start());
-            let end = stmts.last().map_or(span.end(), |s| s.span().end());
-            let fn_span = lang::Span::from(start..end);
-            self.errors.emit_missing_return_error(proto, fn_span);
         }
     }
 
@@ -240,7 +202,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                     // Check that each argument type matches the corresponding parameter type.
                     for (arg, param) in args.iter_mut().zip(&func.params) {
-                        if arg.ty != param.ty && arg.ty.is_concrete() {
+                        if arg.ty != param.ty && arg.ty.is_valid() {
                             self.errors.emit_argument_type_mismatch_error(
                                 param,
                                 arg,

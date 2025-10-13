@@ -108,9 +108,9 @@ impl Type {
         matches!(self, Type::Bool)
     }
 
-    /// Check if the type is an concrete type (i.e., not `Unknown` or `Infer`).
+    /// Check if the type is a valid type (i.e., not Unknown or Infer).
     #[must_use]
-    pub fn is_concrete(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         !matches!(self, Type::Unknown | Type::Infer)
     }
 }
