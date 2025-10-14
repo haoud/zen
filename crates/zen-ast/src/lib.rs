@@ -132,6 +132,11 @@ pub enum StmtKind<'src> {
         Option<Box<Spanned<Block<'src>>>>,
     ),
 
+    /// An expression statement. This is simply one or more expressions that are terminated
+    /// by a semicolon. The element is the expression being evaluated. This is useful for
+    /// expressions that have side effects, such as function calls.
+    Expr(Box<Spanned<Expr<'src>>>),
+
     /// A error statement that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed
     /// to the code generator.

@@ -147,6 +147,13 @@ impl<'src> SemanticAnalysis<'src> {
                         self.scopes.exit_scope();
                     }
                 }
+                ast::StmtKind::Expr(expr) => {
+                    self.check_expr(expr, false);
+                    // TODO: Consider warning if the expression's type is not `void` (i.e., its
+                    // value is unused), as this may indicate a potential mistake or oversight in
+                    // the code. For example, the statement `x + 1;` has no effect and is likely
+                    // unintended, although it is syntactically and semantically valid.
+                }
                 ast::StmtKind::Error(_) => unreachable!(),
             }
         }
@@ -297,6 +304,9 @@ impl<'src> SemanticAnalysis<'src> {
                         self.infer_stmt(stmt);
                     }
                 }
+            }
+            ast::StmtKind::Expr(expr) => {
+                self.infer_expr(expr);
             }
             ast::StmtKind::Error(_) => unreachable!(),
         }

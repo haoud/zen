@@ -189,6 +189,10 @@ impl Codegen {
                     .unwrap_or_default();
                 format!("if ({cond}) {then_block}{else_block}")
             }
+            ast::StmtKind::Expr(expr) => {
+                let expr = self.generate_expr(expr);
+                format!("{expr};")
+            }
             ast::StmtKind::Error(..) => unreachable!(),
         }
     }

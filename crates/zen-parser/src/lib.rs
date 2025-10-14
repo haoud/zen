@@ -205,7 +205,29 @@ where
                 )
             });
 
-        choice((return_expr, let_expr, var_expr, assign_op_expr, if_stmt)).boxed()
+        // An expression statement is simply an expression followed by a semicolon. The expression
+        // is evaluated, and its result is discarded. This is useful for expressions that have
+        // side effects, such as function calls.
+        let expr_stmt = expr_parser()
+            .then_ignore(just(lexer::Token::Delimiter(";")))
+            .map_with(|expr, e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::Expr(Box::new(expr)),
+                    },
+                    e.span(),
+                )
+            });
+
+        choice((
+            return_expr,
+            let_expr,
+            var_expr,
+            assign_op_expr,
+            if_stmt,
+            expr_stmt,
+        ))
+        .boxed()
     })
 }
 
