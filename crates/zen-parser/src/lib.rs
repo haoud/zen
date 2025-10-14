@@ -75,28 +75,6 @@ where
         })
 }
 
-/// A parser for blocks of statements in the language. A block is a sequence of statements
-/// enclosed in curly braces `{}`. Blocks are used in function bodies, conditional statements,
-/// and loops, but can also be used anywhere a single statement is expected.
-#[must_use]
-pub fn block_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, ast::Block<'src>, ParserError<'tokens, 'src>>
-where
-    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
-{
-    stmt_parser()
-        .repeated()
-        .collect()
-        .delimited_by(
-            just(lexer::Token::Delimiter("{")),
-            just(lexer::Token::Delimiter("}")),
-        )
-        .map(|statements| ast::Block {
-            stmts: statements,
-            ty: lang::Type::Infer,
-        })
-}
-
 /// A parser for statements in the language. Currently, the only statement that is supported
 /// is a `return` statement, but more statements can be added in the future, like variable
 /// declarations, variable assignments, if statements, while loops...
@@ -106,82 +84,129 @@ pub fn stmt_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    // Parse a `return` statement, which is an expression of the form `return <expr>;`
-    let return_expr = just(lexer::Token::Keyword("return"))
-        .ignore_then(expr_parser())
-        .then_ignore(just(lexer::Token::Delimiter(";")))
-        .map_with(|expr, e| {
-            Spanned::new(
-                ast::Stmt {
-                    kind: ast::StmtKind::Return(Box::new(expr)),
-                },
-                e.span(),
+    recursive(|stmt| {
+        // A parser for a block of statements, which is a sequence of statements enclosed
+        // in curly braces `{}`. Since blocks can be nested, we use recursion to parse
+        // them. Blocks can also appear in other places, like function bodies, if statements,
+        // while loops...
+        let block = stmt
+            .repeated()
+            .collect()
+            .delimited_by(
+                just(lexer::Token::Delimiter("{")),
+                just(lexer::Token::Delimiter("}")),
             )
-        });
+            .map_with(|statements, e| {
+                Spanned::new(
+                    ast::Block {
+                        stmts: statements,
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            });
 
-    // Parse a `let` statement, which is of the form `let <ident> [: <type>] = <expr>;`. The
-    // type annotation is optional, and if it is not provided, the type will be inferred
-    // from the expression if possible.
-    let let_expr = just(lexer::Token::Keyword("let"))
-        .ignore_then(ident_parser())
-        .then_ignore(just(lexer::Token::Delimiter(":")))
-        .then(builtin_type_parser().or_not())
-        .then_ignore(just(lexer::Token::Operator("=")))
-        .then(expr_parser())
-        .then_ignore(just(lexer::Token::Delimiter(";")))
-        .map_with(|((ident, ty), expr), e| {
-            Spanned::new(
-                ast::Stmt {
-                    kind: ast::StmtKind::Let(
-                        ident,
-                        ty.unwrap_or(Spanned::none(lang::Type::Infer)),
-                        Box::new(expr),
-                    ),
-                },
-                e.span(),
+        // Parse a `return` statement, which is an expression of the form `return <expr>;`
+        let return_expr = just(lexer::Token::Keyword("return"))
+            .ignore_then(expr_parser())
+            .then_ignore(just(lexer::Token::Delimiter(";")))
+            .map_with(|expr, e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::Return(Box::new(expr)),
+                    },
+                    e.span(),
+                )
+            });
+
+        // Parse a `let` statement, which is of the form `let <ident> [: <type>] = <expr>;`. The
+        // type annotation is optional, and if it is not provided, the type will be inferred
+        // from the expression if possible.
+        let let_expr = just(lexer::Token::Keyword("let"))
+            .ignore_then(ident_parser())
+            .then_ignore(just(lexer::Token::Delimiter(":")))
+            .then(builtin_type_parser().or_not())
+            .then_ignore(just(lexer::Token::Operator("=")))
+            .then(expr_parser())
+            .then_ignore(just(lexer::Token::Delimiter(";")))
+            .map_with(|((ident, ty), expr), e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::Let(
+                            ident,
+                            ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                            Box::new(expr),
+                        ),
+                    },
+                    e.span(),
+                )
+            });
+
+        // Parse a `var` statement, which is of the form `var <ident> [: <type>] = <expr>;`
+        // This is very similar to a let statement, but the variable can be mutated after it
+        // is declared, unlike a let statement which declares an immutable variable.
+        let var_expr = just(lexer::Token::Keyword("var"))
+            .ignore_then(ident_parser())
+            .then_ignore(just(lexer::Token::Delimiter(":")))
+            .then(builtin_type_parser().or_not())
+            .then_ignore(just(lexer::Token::Operator("=")))
+            .then(expr_parser())
+            .then_ignore(just(lexer::Token::Delimiter(";")))
+            .map_with(|((ident, ty), expr), e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::Var(
+                            ident,
+                            ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                            Box::new(expr),
+                        ),
+                    },
+                    e.span(),
+                )
+            });
+
+        // Parse an assignment statement, which is of the form `<ident> [op] = <expr>;`, where
+        // `op` is an optional binary operator for compound assignments like `+=`, `-=`...
+        let assign_op_expr = ident_parser()
+            .then(product_ops().or(sum_ops()).or_not())
+            .then_ignore(just(lexer::Token::Operator("=")))
+            .then(expr_parser())
+            .then_ignore(just(lexer::Token::Delimiter(";")))
+            .map_with(|((ident, op), expr), e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::Assign(op, Box::new(ident), Box::new(expr)),
+                    },
+                    e.span(),
+                )
+            });
+
+        let if_stmt = just(lexer::Token::Keyword("if"))
+            .ignore_then(expr_parser().delimited_by(
+                just(lexer::Token::Delimiter("(")),
+                just(lexer::Token::Delimiter(")")),
+            ))
+            .then(block.clone())
+            .then(
+                just(lexer::Token::Keyword("else"))
+                    .ignore_then(block.clone())
+                    .or_not(),
             )
-        });
+            .map_with(|((condition, then_block), else_block), e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::If(
+                            Box::new(condition),
+                            Box::new(then_block),
+                            else_block.map(Box::new),
+                        ),
+                    },
+                    e.span(),
+                )
+            });
 
-    // Parse a `var` statement, which is of the form `var <ident> [: <type>] = <expr>;`
-    // This is very similar to a let statement, but the variable can be mutated after it
-    // is declared, unlike a let statement which declares an immutable variable.
-    let var_expr = just(lexer::Token::Keyword("var"))
-        .ignore_then(ident_parser())
-        .then_ignore(just(lexer::Token::Delimiter(":")))
-        .then(builtin_type_parser().or_not())
-        .then_ignore(just(lexer::Token::Operator("=")))
-        .then(expr_parser())
-        .then_ignore(just(lexer::Token::Delimiter(";")))
-        .map_with(|((ident, ty), expr), e| {
-            Spanned::new(
-                ast::Stmt {
-                    kind: ast::StmtKind::Var(
-                        ident,
-                        ty.unwrap_or(Spanned::none(lang::Type::Infer)),
-                        Box::new(expr),
-                    ),
-                },
-                e.span(),
-            )
-        });
-
-    // Parse an assignment statement, which is of the form `<ident> [op] = <expr>;`, where
-    // `op` is an optional binary operator for compound assignments like `+=`, `-=`...
-    let assign_op_expr = ident_parser()
-        .then(product_ops().or(sum_ops()).or_not())
-        .then_ignore(just(lexer::Token::Operator("=")))
-        .then(expr_parser())
-        .then_ignore(just(lexer::Token::Delimiter(";")))
-        .map_with(|((ident, op), expr), e| {
-            Spanned::new(
-                ast::Stmt {
-                    kind: ast::StmtKind::Assign(op, Box::new(ident), Box::new(expr)),
-                },
-                e.span(),
-            )
-        });
-
-    choice((return_expr, let_expr, var_expr, assign_op_expr)).boxed()
+        choice((return_expr, let_expr, var_expr, assign_op_expr, if_stmt)).boxed()
+    })
 }
 
 /// A parser for expressions in the language. Currently, the only expression that is supported

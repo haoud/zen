@@ -1,0 +1,8 @@
+int main() {
+    let x := 5;
+    if (x > 5) {
+        return 0;
+    } else {
+        // E022: Not all control paths return a value
+    }
+}

@@ -53,16 +53,23 @@ impl<'src> SemanticAnalysis<'src> {
                     ),
                 );
             }
-            self.check_statements(&mut function.0.body, span);
+            self.check_statements(function.prototype.clone(), &mut function.body, span);
             self.scopes.exit_scope();
 
-            // Build and analyze the control flow graph for the function body.
-            flow::analyse_graph(self, function, flow::build_graph(&function.body));
+            // Simple control flow analysis to ensure all code paths return a value and to
+            // identify unreachable code.
+            let mut cfa = flow::ControlFlowAnalysis::new(&mut self.errors);
+            cfa.check_block(&function.0.body, function);
         }
     }
 
     /// Check the statements within a function for semantic correctness.
-    pub fn check_statements(&mut self, stmts: &mut [Spanned<ast::Stmt<'src>>], span: lang::Span) {
+    pub fn check_statements(
+        &mut self,
+        proto: Spanned<ast::FunctionPrototype<'src>>,
+        stmts: &mut [Spanned<ast::Stmt<'src>>],
+        span: lang::Span,
+    ) {
         for stmt in stmts.iter_mut() {
             // Infer the type of the statement and its contents, as it may affect
             // subsequent checks.
@@ -71,9 +78,13 @@ impl<'src> SemanticAnalysis<'src> {
             let stmt_span = stmt.span();
             match &mut stmt.0.kind {
                 ast::StmtKind::Return(expr) => {
-                    // Check the expression being returned for semantic correctness. If there are
-                    // errors, collect them, but still proceed to check the return type.
                     self.check_expr(expr, false);
+
+                    // Verify that the return expression type matches the function's return type.
+                    if expr.ty != proto.ret.0 && expr.ty.is_valid() {
+                        self.errors
+                            .emit_return_type_mismatch_error(&proto, stmt_span, expr.ty);
+                    }
                 }
                 ast::StmtKind::Let(_, ty, expr) | ast::StmtKind::Var(_, ty, expr) => {
                     self.check_expr(expr, false);
@@ -112,6 +123,28 @@ impl<'src> SemanticAnalysis<'src> {
                         }
                     } else {
                         self.errors.emit_undefined_variable_error(ident);
+                    }
+                }
+                ast::StmtKind::If(cond, then, or) => {
+                    // Check the condition expression
+                    self.check_expr(cond, false);
+
+                    // Ensure that the condition expression evaluates to a boolean type.
+                    if !cond.ty.is_boolean() {
+                        self.errors
+                            .emit_non_boolean_in_conditional_error(cond, stmt_span);
+                    }
+
+                    // Recursively check the statements in the `then` block
+                    self.scopes.enter_scope();
+                    self.check_statements(proto.clone(), &mut then.stmts, stmt_span);
+                    self.scopes.exit_scope();
+
+                    // Recursively check the statements in the optional `else` block
+                    if let Some(or) = or {
+                        self.scopes.enter_scope();
+                        self.check_statements(proto.clone(), &mut or.stmts, stmt_span);
+                        self.scopes.exit_scope();
                     }
                 }
                 ast::StmtKind::Error(_) => unreachable!(),
@@ -253,6 +286,17 @@ impl<'src> SemanticAnalysis<'src> {
             }
             ast::StmtKind::Assign(_, _, expr) => {
                 self.infer_expr(expr);
+            }
+            ast::StmtKind::If(cond, then, or) => {
+                self.infer_expr(cond);
+                for stmt in &mut then.stmts {
+                    self.infer_stmt(stmt);
+                }
+                if let Some(or) = or {
+                    for stmt in &mut or.stmts {
+                        self.infer_stmt(stmt);
+                    }
+                }
             }
             ast::StmtKind::Error(_) => unreachable!(),
         }

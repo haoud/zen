@@ -1,9 +1,11 @@
-bool main() {
-    let holidays := false;  // It's not holidays
-    let money := 2000;      // I have 2000 in my bank account
+int factorial(n: int) {
+    if (n <= 1) {
+        return 1;
+    } else {
+        return n * factorial(n - 1);
+    }
+}
 
-    let work := !holidays && money <= 500;
-    let happy := !work || money > 1000;
-
-    return happy;
+int main() {
+    return factorial(5);
 }

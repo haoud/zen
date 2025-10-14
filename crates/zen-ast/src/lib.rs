@@ -122,6 +122,16 @@ pub enum StmtKind<'src> {
         Box<Spanned<Expr<'src>>>,
     ),
 
+    /// An if statement. The first element is the condition expression, the second element
+    /// is the block of statements to execute if the condition is true, and the third element
+    /// is an optional block of statements to execute if the condition is false (the else block
+    /// is optional). TODO: Support else-if chains.
+    If(
+        Box<Spanned<Expr<'src>>>,
+        Box<Spanned<Block<'src>>>,
+        Option<Box<Spanned<Block<'src>>>>,
+    ),
+
     /// A error statement that is used to indicate a parsing error. This
     /// variant should not be present in the final AST that will be passed
     /// to the code generator.

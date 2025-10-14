@@ -74,6 +74,12 @@ pub enum SemanticErrorKind {
 
     /// Using comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) with incompatible types.
     ComparisonWithIncompatibleTypes = 20,
+
+    /// Using an non-boolean expression in a conditional statement (like `if` or `while`).
+    NonBooleanInConditional = 21,
+
+    /// Not all control paths in a non-void function return a value.
+    NotAllPathsReturnValue = 22,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -656,6 +662,57 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, rhs.span().into_range()))
                         .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a non-boolean expression is used in a conditional statement
+    /// (like `if` or `while`). It takes the spanned expression and the span of the entire
+    /// conditional statement.
+    #[inline]
+    pub fn emit_non_boolean_in_conditional_error(
+        &mut self,
+        expr: &Spanned<ast::Expr<'src>>,
+        stmt_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
+                .with_code(SemanticErrorKind::NonBooleanInConditional as u32)
+                .with_message(format!(
+                    "conditional statement requires a boolean expression: found '{}'",
+                    expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Expression is of type '{}'", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when not all control paths in a non-void function return a value.
+    #[inline]
+    pub fn emit_not_all_paths_return_value_error(
+        &mut self,
+        proto: &ast::FunctionPrototype<'src>,
+        fn_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
+                .with_code(SemanticErrorKind::NotAllPathsReturnValue as u32)
+                .with_message(format!(
+                    "not all control paths in function '{}' return a value",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, fn_span.into_range()))
+                        .with_message(format!(
+                            "function '{}' must return a value of type '{}'",
+                            proto.ident.name, proto.ret.0
+                        ))
                         .with_color(Color::Red),
                 )
                 .finish(),

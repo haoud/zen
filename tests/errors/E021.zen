@@ -1,0 +1,8 @@
+int main() {
+    let x := 5;
+    if (x) {        // E021: Condition statement requires a boolean expression
+        return 0;
+    } else {
+        return 1;
+    }
+}

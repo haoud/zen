@@ -101,12 +101,11 @@ impl Codegen {
         self.code += "\n";
     }
 
-    /// Indent the future line of code by adding tabs to the generated code depending on the
-    /// current scope depth.
-    pub fn indent_codegen(&mut self) {
-        for _ in 0..self.current_scope().depth() {
-            self.code += "\t";
-        }
+    /// Generate the indentation for the current scope depth. This will return a string
+    /// containing the appropriate number of tab characters for the current scope depth.
+    #[must_use]
+    pub fn indent_codegen(&self) -> String {
+        "\t".repeat(self.current_scope().depth())
     }
 
     /// Generate the function header. This function will generate the function return type,
@@ -150,7 +149,7 @@ impl Codegen {
             codegen.code += "{\n";
             for stmt in &func.body {
                 let code = &codegen.generate_stmt(stmt);
-                codegen.indent_codegen();
+                codegen.code += &codegen.indent_codegen();
                 codegen.code += code;
                 codegen.code += "\n";
             }
@@ -181,8 +180,47 @@ impl Codegen {
                 let expr = self.generate_expr(expr);
                 format!("{ident} {op}= {expr};", ident = ident.name,)
             }
+            ast::StmtKind::If(cond, then_block, else_block) => {
+                let cond = self.generate_expr(cond);
+                let then_block = self.generate_block(then_block);
+                let else_block = else_block
+                    .as_ref()
+                    .map(|else_blk| format!(" else {}", self.generate_block(else_blk)))
+                    .unwrap_or_default();
+                format!("if ({cond}) {then_block}{else_block}")
+            }
             ast::StmtKind::Error(..) => unreachable!(),
         }
+    }
+
+    /// Generate the C code for the given block of statements. This function will recursively
+    /// generate the C code for the block and its statements. It will return the generated
+    /// C code as a string.
+    #[must_use]
+    pub fn generate_block(&mut self, block: &ast::Block) -> String {
+        let mut code = String::new();
+
+        code += "{\n";
+        self.scoped(|codegen| {
+            for stmt in &block.stmts {
+                let stmt_code = codegen.generate_stmt(stmt);
+                code += &codegen.indent_codegen();
+                code += &stmt_code;
+                code += "\n";
+            }
+        });
+
+        // Handle the case of an empty block to generate an more readable code.
+        if block.stmts.is_empty() {
+            self.scoped(|codegen| {
+                code += &codegen.indent_codegen();
+                code += "// empty block\n";
+            });
+        }
+
+        code += &self.indent_codegen();
+        code += "}";
+        code
     }
 
     /// Generate the C code for the given expression. This function will recursively generate the
