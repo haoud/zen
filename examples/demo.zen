@@ -6,7 +6,12 @@ int factorial(n: int) {
     }
 }
 
+int println(message: str) {
+    // TODO...
+    return 0;
+}
+
 int main() {
-    1 + 2;
+    println("Hello, world!");
     return factorial(5);
 }

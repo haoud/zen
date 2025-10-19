@@ -50,6 +50,9 @@ pub enum Token<'a> {
 
     /// A number literal
     Number(Literal<'a>),
+
+    /// A string literal
+    String(String),
 }
 
 impl core::fmt::Display for Token<'_> {
@@ -60,6 +63,7 @@ impl core::fmt::Display for Token<'_> {
             Token::Operator(op) => write!(f, "{op}"),
             Token::Keyword(kw) => write!(f, "{kw}"),
             Token::Number(lit) => write!(f, "{lit}"),
+            Token::String(s) => write!(f, "\"{s}\""),
         }
     }
 }
@@ -109,6 +113,14 @@ pub fn lexer<'a>()
         text::int(10).map(|s| (s, LiteralBase::Decimal)),
     ))
     .map(|(num_str, base)| Token::Number(Literal::new(num_str, base)));
+
+    // A lexer for string literals. String literals are sequences of characters
+    // enclosed in double quotes. For simplicity, we do not support escape
+    // sequences in string literals for now.
+    let string = just('"')
+        .ignore_then(none_of("\"").repeated().at_least(0).collect())
+        .then_ignore(just('"'))
+        .map(Token::String);
 
     // A parser for operators. Operators are special combinations of
     // one or more characters that represent an operation in the language.
@@ -162,7 +174,7 @@ pub fn lexer<'a>()
     .map(Token::Delimiter);
 
     // A single token can be one of the above
-    let token = choice((keyword, ident, operator, delimiter, number));
+    let token = choice((keyword, ident, operator, delimiter, number, string));
 
     // A parser for comments. Comments start with `//` and end with a newline
     // character. Comments are ignored by the parser and are not returned as tokens

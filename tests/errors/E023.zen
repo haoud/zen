@@ -1,0 +1,4 @@
+int main() {
+    let s := "Hello" + " World";    // E023: Cannot use binary operator `+` on two string literals
+    return 0;
+}

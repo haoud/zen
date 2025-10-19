@@ -234,6 +234,7 @@ impl Codegen {
         match &expr.kind {
             ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
+            ast::ExprKind::String(s) => format!("\"{}\"", s.0),
             ast::ExprKind::Bool(b) => {
                 if b.0 {
                     "true".to_string()
@@ -275,6 +276,7 @@ impl Codegen {
     ///    constructed.
     pub fn generate_type(&mut self, ty: &lang::Type) -> String {
         match ty {
+            lang::Type::Str => "char *".to_string(),
             lang::Type::Bool => "bool".to_string(),
             lang::Type::Int => "int".to_string(),
             lang::Type::Unknown => {

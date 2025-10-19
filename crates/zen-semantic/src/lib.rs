@@ -193,15 +193,16 @@ impl<'src> SemanticAnalysis<'src> {
                     self.errors
                         .emit_logical_operator_with_non_boolean_error(*op, lhs, rhs, span);
                 }
+
+                // Disallow binary operations involving string types for now.
+                if lhs.ty == lang::Type::Str || rhs.ty == lang::Type::Str {
+                    self.errors
+                        .emit_invalid_string_binary_operation_error(*op, lhs, rhs, span);
+                }
             }
             ast::ExprKind::Unary(op, rhs) => {
                 match op {
                     lang::UnaryOp::Neg => {
-                        // Disallow negation of boolean types.
-                        if *op == lang::UnaryOp::Neg && rhs.ty.is_boolean() {
-                            self.errors.emit_negation_of_non_numeric_type_error(rhs);
-                        }
-
                         // Recursively check the inner expression, passing along whether we are in
                         // a negated context or not. This is needed to correctly handle cases like
                         // double negation and to ensure proper overflow/underflow checks.
@@ -209,6 +210,17 @@ impl<'src> SemanticAnalysis<'src> {
                             self.check_expr(rhs, !negated);
                         } else {
                             self.check_expr(rhs, negated);
+                        }
+
+                        // Disallow negation of boolean types.
+                        if *op == lang::UnaryOp::Neg && rhs.ty.is_boolean() {
+                            self.errors.emit_negation_of_non_numeric_type_error(rhs);
+                        }
+
+                        // Disallow negation of string types.
+                        if rhs.ty == lang::Type::Str {
+                            self.errors
+                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
                         }
                     }
                     lang::UnaryOp::Not => {
@@ -219,6 +231,12 @@ impl<'src> SemanticAnalysis<'src> {
                         self.check_expr(rhs, false);
                         if !rhs.ty.is_boolean() {
                             self.errors.emit_logical_not_with_non_boolean_error(rhs);
+                        }
+
+                        // Disallow logical NOT on string types.
+                        if rhs.ty == lang::Type::Str {
+                            self.errors
+                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
                         }
                     }
                 }
@@ -265,13 +283,21 @@ impl<'src> SemanticAnalysis<'src> {
                             self.errors.emit_literal_overflow_error(x);
                         }
                     }
+                    lang::Type::Str => {
+                        unreachable!("String literals should always have type String after parsing")
+                    }
                     lang::Type::Bool => {
-                        // Nothing to check for boolean literals.
+                        unreachable!("Boolean literals should always have type Bool after parsing")
                     }
                     lang::Type::Infer | lang::Type::Unknown => {
                         unreachable!("Literal types should be inferred during type inference")
                     }
                 }
+            }
+            ast::ExprKind::String(_) => {
+                // For now, we do not perform any specific semantic checks on string literals since
+                // I'm not sure what constraints I want to enforce yet (UTF-8 validity, length
+                // limits, etc.).
             }
             ast::ExprKind::Identifier(_) | ast::ExprKind::Bool(_) => {
                 // Nothing to check for identifiers and boolean literals.
@@ -346,88 +372,99 @@ impl<'src> SemanticAnalysis<'src> {
     }
 
     /// Infer the type of an expression, updating it in place.
+    ///
+    /// # Panics
+    /// This function will panic if it encounters an `ast::ExprKind::Error`, as such expressions
+    /// should not appear during type inference, or if an expression's type is still `Infer` but
+    /// should have been determined during parsing (e.g., string or boolean literals).
     fn infer_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
-        if expr.ty == lang::Type::Infer {
-            match &mut expr.kind {
-                ast::ExprKind::Binary(op, lhs, rhs) => {
-                    // Recursively infer types of the left and right expressions if needed.
-                    self.infer_expr(lhs);
-                    self.infer_expr(rhs);
+        // The expression's type is already known, so no inference is needed.
+        if expr.ty != lang::Type::Infer {
+            return;
+        }
 
-                    match op {
-                        lang::BinaryOp::And
-                        | lang::BinaryOp::Or
-                        | lang::BinaryOp::Eq
-                        | lang::BinaryOp::Neq
-                        | lang::BinaryOp::Lt
-                        | lang::BinaryOp::Lte
-                        | lang::BinaryOp::Gt
-                        | lang::BinaryOp::Gte => {
-                            // Logical and comparison operators always yield a boolean result.
-                            expr.ty = lang::Type::Bool;
-                        }
+        match &mut expr.kind {
+            ast::ExprKind::Binary(op, lhs, rhs) => {
+                // Recursively infer types of the left and right expressions if needed.
+                self.infer_expr(lhs);
+                self.infer_expr(rhs);
 
-                        lang::BinaryOp::Add
-                        | lang::BinaryOp::Sub
-                        | lang::BinaryOp::Mul
-                        | lang::BinaryOp::Div => {
-                            // If both sides have the same non-infer type, set the expression's type
-                            // to that. However, if either side is still `Infer` or doesn't match,
-                            // we set the type to `Unknown` to indicate a type inference failure.
-                            // TODO: Implement proper type coercion rules here.
-                            if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
-                                expr.ty = lhs.ty;
-                            } else {
-                                expr.ty = lang::Type::Unknown;
-                            }
+                match op {
+                    lang::BinaryOp::And
+                    | lang::BinaryOp::Or
+                    | lang::BinaryOp::Eq
+                    | lang::BinaryOp::Neq
+                    | lang::BinaryOp::Lt
+                    | lang::BinaryOp::Lte
+                    | lang::BinaryOp::Gt
+                    | lang::BinaryOp::Gte => {
+                        // Logical and comparison operators always yield a boolean result.
+                        expr.ty = lang::Type::Bool;
+                    }
+
+                    lang::BinaryOp::Add
+                    | lang::BinaryOp::Sub
+                    | lang::BinaryOp::Mul
+                    | lang::BinaryOp::Div => {
+                        // If both sides have the same non-infer type, set the expression's type
+                        // to that. However, if either side is still `Infer` or doesn't match,
+                        // we set the type to `Unknown` to indicate a type inference failure.
+                        // TODO: Implement proper type coercion rules here.
+                        if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
+                            expr.ty = lhs.ty;
+                        } else {
+                            expr.ty = lang::Type::Unknown;
                         }
                     }
                 }
-                ast::ExprKind::Unary(op, rhs) => {
-                    match op {
-                        lang::UnaryOp::Neg => {
-                            // Recursively infer the type of the inner expression if needed.
-                            self.infer_expr(rhs);
-                            expr.ty = rhs.ty;
-                        }
-                        lang::UnaryOp::Not => {
-                            // The logical NOT operator always yields a boolean result.
-                            expr.ty = lang::Type::Bool;
-                        }
+            }
+            ast::ExprKind::Unary(op, rhs) => {
+                match op {
+                    lang::UnaryOp::Neg => {
+                        // Recursively infer the type of the inner expression if needed.
+                        self.infer_expr(rhs);
+                        expr.ty = rhs.ty;
+                    }
+                    lang::UnaryOp::Not => {
+                        // The logical NOT operator always yields a boolean result.
+                        expr.ty = lang::Type::Bool;
                     }
                 }
-                ast::ExprKind::FunctionCall(_ident, _) => {
-                    if let Some(func) = self.scopes.get_function(_ident.name) {
-                        expr.ty = func.ret;
-                    } else {
-                        // If the function is not found, we set the expression's type to `Unknown`
-                        // but we do not emit an error here, as the function call will be checked
-                        // later in the `check_expr` method that will handle the error reporting.
-                        expr.ty = lang::Type::Unknown;
-                    }
+            }
+            ast::ExprKind::FunctionCall(_ident, _) => {
+                if let Some(func) = self.scopes.get_function(_ident.name) {
+                    expr.ty = func.ret;
+                } else {
+                    // If the function is not found, we set the expression's type to `Unknown`
+                    // but we do not emit an error here, as the function call will be checked
+                    // later in the `check_expr` method that will handle the error reporting.
+                    expr.ty = lang::Type::Unknown;
                 }
-                ast::ExprKind::Identifier(identifier) => {
-                    // Identifier type is always explicited during their declaration. So we can
-                    // simply look it up in the symbol table and assign the variable's type to the
-                    // expression.
-                    if let Some(var) = self.scopes.get_variable(identifier.name) {
-                        expr.ty = var.ty;
-                    } else {
-                        self.errors.emit_undefined_variable_error(identifier);
-                        expr.ty = lang::Type::Unknown;
-                    }
+            }
+            ast::ExprKind::Identifier(identifier) => {
+                // Identifier type is always explicited during their declaration. So we can
+                // simply look it up in the symbol table and assign the variable's type to the
+                // expression.
+                if let Some(var) = self.scopes.get_variable(identifier.name) {
+                    expr.ty = var.ty;
+                } else {
+                    self.errors.emit_undefined_variable_error(identifier);
+                    expr.ty = lang::Type::Unknown;
                 }
-                ast::ExprKind::Literal(_) => {
-                    // Literal types should be inferred based on their value and context. For now,
-                    // we assume all literals are integers until we implement proper literal types.
-                    todo!("Handle literal type inference");
-                }
-                ast::ExprKind::Bool(_) => {
-                    unreachable!("Boolean literals should always have type Bool after parsing")
-                }
-                ast::ExprKind::Error(_) => {
-                    unreachable!("Error expressions should not appear during type inference")
-                }
+            }
+            ast::ExprKind::Literal(_) => {
+                // Literal types should be inferred based on their value and context. For now,
+                // we assume all literals are integers until we implement proper literal types.
+                todo!("Handle literal type inference");
+            }
+            ast::ExprKind::String(_) => {
+                unreachable!("String literals should always have type String after parsing")
+            }
+            ast::ExprKind::Bool(_) => {
+                unreachable!("Boolean literals should always have type Bool after parsing")
+            }
+            ast::ExprKind::Error(_) => {
+                unreachable!("Error expressions should not appear during type inference")
             }
         }
     }

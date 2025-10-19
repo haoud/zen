@@ -252,6 +252,18 @@ where
             )
         };
 
+        // Parse a string literal. A string literal is a sequence of characters
+        // enclosed in double quotes.
+        let string = string_parser().map_with(|s, e| {
+            Spanned::new(
+                ast::Expr {
+                    kind: ast::ExprKind::String(s),
+                    ty: lang::Type::Str,
+                },
+                e.span(),
+            )
+        });
+
         // An identifier is a sequence of characters that represents a name in the language.
         // Identifiers are used to name variables, functions, classes, etc.
         let identifier = ident_parser().map_with(|ident, e| {
@@ -307,6 +319,7 @@ where
             })
             .or(call)
             .or(identifier)
+            .or(string)
             .or(bool_value_parser())
             .or(expr.delimited_by(
                 just(lexer::Token::Delimiter("(")),
@@ -490,6 +503,19 @@ where
     just(lexer::Token::Operator("||")).to(lang::BinaryOp::Or)
 }
 
+/// A parser for string literals in the language. String literals are sequences of characters
+/// enclosed in double quotes.
+#[must_use]
+pub fn string_parser<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, Spanned<String>, ParserError<'tokens, 'src>> + Clone
+where
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
+{
+    select! {
+        lexer::Token::String(s) = e => Spanned::new(s, e.span())
+    }
+}
+
 /// A parser for boolean literals in the language. Boolean literals are the
 /// keywords `true` and `false`, which represent the two possible values of
 /// the boolean type.
@@ -544,5 +570,6 @@ where
     select! {
         lexer::Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
         lexer::Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
+        lexer::Token::Identifier("str") = e => Spanned::new(lang::Type::Str, e.span()),
     }
 }

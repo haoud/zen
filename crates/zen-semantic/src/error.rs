@@ -80,6 +80,12 @@ pub enum SemanticErrorKind {
 
     /// Not all control paths in a non-void function return a value.
     NotAllPathsReturnValue = 22,
+
+    /// Invalid binary operation attempted on string literals.
+    InvalidStringBinaryOperation = 23,
+
+    /// Invalid unary operation attempted on string literals.
+    InvalidStringUnaryOperation = 24,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -713,6 +719,59 @@ impl<'src> SemanticDiagnostic<'src> {
                             "function '{}' must return a value of type '{}'",
                             proto.ident.name, proto.ret.0
                         ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an invalid binary operation is attempted on string literals.
+    #[inline]
+    pub fn emit_invalid_string_binary_operation_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::InvalidStringBinaryOperation as u32)
+                .with_message(format!(
+                    "cannot perform binary operation '{op}' on string literals: left is '{}', right is '{}'",
+                    lhs.ty, rhs.ty
+                ))
+                .with_label(    
+                    ariadne::Label::new((self.filename, lhs.span().into_range()))
+                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, rhs.span().into_range()))
+                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an invalid unary operation is attempted on string literals.
+    #[inline]
+    pub fn emit_invalid_string_unary_operation_error(
+        &mut self,
+        op: lang::UnaryOp,
+        expr: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::InvalidStringUnaryOperation as u32)
+                .with_message(format!(
+                    "cannot perform unary operation '{op}' on string literal",
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Operand is a string literal"))
                         .with_color(Color::Red),
                 )
                 .finish(),

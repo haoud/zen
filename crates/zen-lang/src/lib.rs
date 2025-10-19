@@ -94,6 +94,11 @@ pub enum Type {
     /// of this type indicate a failure to infer the type.
     Infer,
 
+    /// A string type. Currently, strings are represented as a sequence of characters and do not
+    /// have a fixed length. Future versions of the language may introduce more complex string
+    /// types, such as fixed-length strings or string slices.
+    Str,
+
     /// A boolean type. Can be either true or false.
     Bool,
 
@@ -120,6 +125,7 @@ impl std::fmt::Display for Type {
         match self {
             Type::Unknown => write!(f, "<unknown>"),
             Type::Infer => write!(f, "<infer>"),
+            Type::Str => write!(f, "string"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
         }

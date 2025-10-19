@@ -1,0 +1,4 @@
+int main() {
+    let s := -"Hello";    // E024: Cannot use unary operator `-` on a string literal
+    return 0;
+}
