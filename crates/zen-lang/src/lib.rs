@@ -104,6 +104,9 @@ pub enum Type {
 
     /// An signed integer type.
     Int,
+
+    /// Void type. It is only used to indicate that a function does not return a value.
+    Void,
 }
 
 impl Type {
@@ -128,6 +131,7 @@ impl std::fmt::Display for Type {
             Type::Str => write!(f, "string"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
+            Type::Void => write!(f, "void"),
         }
     }
 }

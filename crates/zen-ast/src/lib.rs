@@ -91,8 +91,10 @@ pub struct Stmt<'src> {
 /// Different kinds of statements supported by the language.
 #[derive(Debug, Clone, Hash)]
 pub enum StmtKind<'src> {
-    /// A return statement. The element is the expression that is returned.
-    Return(Box<Spanned<Expr<'src>>>),
+    /// A return statement. The element is an optional expression that is being
+    /// returned from the function. If no expression is provided, the expression
+    /// type is considered to be `void`.
+    Return(Box<Option<Spanned<Expr<'src>>>>),
 
     /// A let statement. The first element is the identifier being bound, the second
     /// element is the optional type annotation, and the third element is the expression

@@ -86,6 +86,18 @@ pub enum SemanticErrorKind {
 
     /// Invalid unary operation attempted on string literals.
     InvalidStringUnaryOperation = 24,
+
+    /// Attempted to return a value from a void function.
+    ReturnValueFromVoidFunction = 25,
+
+    /// Missing return expression in a non-void function.
+    MissingReturnExpression = 26,
+
+    /// Attempted to declare a variable of type void.
+    VoidVariableDeclaration = 27,
+
+    /// Attempted to declare a parameter of type void.
+    VoidFunctionParameter = 28,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -772,6 +784,104 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, expr.span().into_range()))
                         .with_message(format!("Operand is a string literal"))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a value is returned from a void function.
+    #[inline]
+    pub fn emit_return_value_from_void_function_error(
+        &mut self,
+        fn_span: lang::Span,
+        ret_span: lang::Span,
+        expr: &Spanned<ast::Expr<'src>>
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, ret_span.into_range()))
+                .with_code(SemanticErrorKind::ReturnValueFromVoidFunction as u32)
+                .with_message("cannot return a value from a void function")
+                .with_label(
+                    ariadne::Label::new((self.filename, ret_span.into_range()))
+                        .with_message(format!("returning a value here of type {}", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, fn_span.into_range()))
+                        .with_message("function is declared as void here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a return expression is missing in a non-void function.
+    #[inline]
+    pub fn emit_missing_return_expression_error(
+        &mut self,
+        proto: &ast::FunctionPrototype<'src>,
+        fn_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
+                .with_code(SemanticErrorKind::MissingReturnExpression as u32)
+                .with_message(format!(
+                    "missing return expression in non-void function '{}'",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, fn_span.into_range()))
+                        .with_message(format!(
+                            "function '{}' must return a value of type '{}'",
+                            proto.ident.name, proto.ret.0
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a variable of type void is declared.
+    #[inline]
+    pub fn emit_void_variable_declaration_error(
+        &mut self,
+        var_span: lang::Span,
+        var_name: &str,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, var_span.into_range()))
+                .with_code(SemanticErrorKind::VoidVariableDeclaration as u32)
+                .with_message(format!(
+                    "cannot declare variable '{}' of type void",
+                    var_name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, var_span.into_range())) 
+                        .with_message(format!("variable '{}' declared as void here", var_name))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a function parameter is declared with type void.
+    #[inline]
+    pub fn emit_void_function_parameter_error(
+        &mut self,
+        param_span: lang::Span,
+        proto: &ast::FunctionPrototype<'src>,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, param_span.into_range()))
+                .with_code(SemanticErrorKind::VoidFunctionParameter as u32)
+                .with_message(format!(
+                    "cannot declare parameter of type void in function '{}'",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, param_span.into_range()))
+                        .with_message("parameter declared as void here")
                         .with_color(Color::Red),
                 )
                 .finish(),

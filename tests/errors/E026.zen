@@ -1,0 +1,3 @@
+int main() {
+    return;       // E026: Non-void function must return a value
+}

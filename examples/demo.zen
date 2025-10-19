@@ -1,17 +1,14 @@
-int factorial(n: int) {
-    if (n <= 1) {
-        return 1;
+void nothing() {
+    // Implicit return
+}
+
+/// Function with only an explicit empty return in one of the if branches. This should
+/// not cause an missing return error since void functions can return implicitly if the
+/// return statement is omitted.
+void main(argc: int) {
+    if (argc > 1) {
+        nothing();
     } else {
-        return n * factorial(n - 1);
+        return;
     }
-}
-
-int println(message: str) {
-    // TODO...
-    return 0;
-}
-
-int main() {
-    println("Hello, world!");
-    return factorial(5);
 }

@@ -112,8 +112,11 @@ impl Codegen {
     /// name and parameters. If the `prototype` flag is set to `true`, the function will
     /// add a semicolon at the end of the function declaration.
     pub fn generate_fn_header(&mut self, func: &ast::Function, prototype: bool) {
+        let ret = self.generate_type(&func.prototype.ret);
+
         // Generate the function return type and name
-        self.code += "int ";
+        self.code += &ret;
+        self.code += " ";
         self.code += func.prototype.ident.name;
         self.code += "(";
 
@@ -163,7 +166,11 @@ impl Codegen {
     pub fn generate_stmt(&mut self, stmt: &ast::Stmt) -> String {
         match &stmt.kind {
             ast::StmtKind::Return(expr) => {
-                format!("return {};", self.generate_expr(expr))
+                if let Some(expr) = expr.as_ref() {
+                    format!("return {};", self.generate_expr(expr))
+                } else {
+                    "return;".to_string()
+                }
             }
             ast::StmtKind::Let(ident, ty, expr) => {
                 let ctype = self.generate_type(ty);
@@ -276,6 +283,7 @@ impl Codegen {
     ///    constructed.
     pub fn generate_type(&mut self, ty: &lang::Type) -> String {
         match ty {
+            lang::Type::Void => "void".to_string(),
             lang::Type::Str => "char *".to_string(),
             lang::Type::Bool => "bool".to_string(),
             lang::Type::Int => "int".to_string(),

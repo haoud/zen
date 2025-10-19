@@ -108,7 +108,7 @@ where
 
         // Parse a `return` statement, which is an expression of the form `return <expr>;`
         let return_expr = just(lexer::Token::Keyword("return"))
-            .ignore_then(expr_parser())
+            .ignore_then(expr_parser().or_not())
             .then_ignore(just(lexer::Token::Delimiter(";")))
             .map_with(|expr, e| {
                 Spanned::new(
@@ -571,5 +571,6 @@ where
         lexer::Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
         lexer::Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
         lexer::Token::Identifier("str") = e => Spanned::new(lang::Type::Str, e.span()),
+        lexer::Token::Identifier("void") = e => Spanned::new(lang::Type::Void, e.span()),
     }
 }

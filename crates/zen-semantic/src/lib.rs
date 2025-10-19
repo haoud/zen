@@ -41,6 +41,12 @@ impl<'src> SemanticAnalysis<'src> {
             self.scopes.insert_function(&mut self.errors, function);
             self.scopes.enter_scope();
             for param in &function.prototype.params {
+                // Verify that function parameters are not declared with the void type.
+                if param.ty.0 == lang::Type::Void {
+                    self.errors
+                        .emit_void_function_parameter_error(param.span(), &function.prototype);
+                }
+
                 self.scopes.insert_variable(
                     &mut self.errors,
                     Spanned::new(
@@ -78,16 +84,46 @@ impl<'src> SemanticAnalysis<'src> {
             let stmt_span = stmt.span();
             match &mut stmt.0.kind {
                 ast::StmtKind::Return(expr) => {
-                    self.check_expr(expr, false);
+                    if let Some(expr) = expr.as_mut() {
+                        self.check_expr(expr, false);
 
-                    // Verify that the return expression type matches the function's return type.
-                    if expr.ty != proto.ret.0 && expr.ty.is_valid() {
-                        self.errors
-                            .emit_return_type_mismatch_error(&proto, stmt_span, expr.ty);
+                        // If the function's return type is void, emitting an error since a value
+                        // is being returned. Skip further checks for this return statement.
+                        if proto.ret.0 == lang::Type::Void {
+                            self.errors.emit_return_value_from_void_function_error(
+                                proto.span(),
+                                stmt_span,
+                                expr,
+                            );
+                            continue;
+                        }
+
+                        // Verify that the return expression type matches the function's return type.
+                        if expr.ty != proto.ret.0 && expr.ty.is_valid() {
+                            self.errors
+                                .emit_return_type_mismatch_error(&proto, stmt_span, expr.ty);
+                        }
+                    } else {
+                        // Verify that the function's return type is void if no expression
+                        // is returned.
+                        if proto.ret.0 != lang::Type::Void {
+                            self.errors
+                                .emit_missing_return_expression_error(&proto, stmt_span);
+                        }
                     }
                 }
-                ast::StmtKind::Let(_, ty, expr) | ast::StmtKind::Var(_, ty, expr) => {
+                ast::StmtKind::Let(ident, ty, expr) | ast::StmtKind::Var(ident, ty, expr) => {
                     self.check_expr(expr, false);
+
+                    // Verify that the variable is not declared with type void. If it is, emit an
+                    // error and skip further checks for this variable declaration since it is
+                    // invalid.
+                    if ty.0 == lang::Type::Void {
+                        self.errors
+                            .emit_void_variable_declaration_error(stmt_span, ident.name);
+                        continue;
+                    }
+
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
                     // that should have happened before this semantic check.
@@ -283,6 +319,9 @@ impl<'src> SemanticAnalysis<'src> {
                             self.errors.emit_literal_overflow_error(x);
                         }
                     }
+                    lang::Type::Void => {
+                        unreachable!("Void literals should not exist in the AST")
+                    }
                     lang::Type::Str => {
                         unreachable!("String literals should always have type String after parsing")
                     }
@@ -310,7 +349,11 @@ impl<'src> SemanticAnalysis<'src> {
     fn infer_stmt(&mut self, stmt: &mut Spanned<ast::Stmt<'src>>) {
         let span = stmt.span();
         match &mut stmt.kind {
-            ast::StmtKind::Return(expr) => self.infer_expr(expr),
+            ast::StmtKind::Return(expr) => {
+                if let Some(expr) = expr.as_mut() {
+                    self.infer_expr(expr);
+                }
+            }
             ast::StmtKind::Let(ident, ty, expr) => {
                 self.infer_let_var(ident, expr, &mut ty.0, span, false);
             }

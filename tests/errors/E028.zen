@@ -1,0 +1,3 @@
+void main(argc: void) {
+    // E028: Cannot declare a parameter of type void
+}

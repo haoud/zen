@@ -1,0 +1,3 @@
+void main() {
+    let a: void = 4;    // E027: Cannot declare variable of type void
+}
