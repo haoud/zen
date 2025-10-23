@@ -1,0 +1,4 @@
+void main() {
+    @println();         // E031: Argument count mismatch in intrinsic function call.
+    @println("{}");     // E031: Argument count mismatch in intrinsic function call.
+}

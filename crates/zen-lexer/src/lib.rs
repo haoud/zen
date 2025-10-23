@@ -150,6 +150,7 @@ pub fn lexer<'a>()
             just("!"),
             just("<"),
             just(">"),
+            just("@"),
         )),
     ))
     .to_slice()

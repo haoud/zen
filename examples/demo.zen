@@ -1,14 +1,9 @@
-void nothing() {
-    // Implicit return
-}
-
-/// Function with only an explicit empty return in one of the if branches. This should
-/// not cause an missing return error since void functions can return implicitly if the
-/// return statement is omitted.
 void main(argc: int) {
-    if (argc > 1) {
-        nothing();
-    } else {
-        return;
-    }
+    let demo := true;
+    let progress := 55;
+
+    @println("Hello, {}!", "world");
+    @println("Argument count: {}", argc);
+    @println("");
+    @println("Progress: {}% ({})", progress, demo);
 }

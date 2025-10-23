@@ -1,0 +1,3 @@
+void main() {
+    @println(3);   // E030: Type mismatch in argument provided to an intrinsic function.
+}

@@ -98,6 +98,15 @@ pub enum SemanticErrorKind {
 
     /// Attempted to declare a parameter of type void.
     VoidFunctionParameter = 28,
+
+    /// Call to an unknown intrinsic function.
+    UnknownIntrinsicFunction = 29,
+
+    /// Type mismatch in argument provided to an intrinsic function.
+    IntrinsicArgumentTypeMismatch = 30,
+
+    /// Incorrect number of arguments provided to an intrinsic function.
+    IntrinsicArgumentCountMismatch = 31,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -887,4 +896,97 @@ impl<'src> SemanticDiagnostic<'src> {
                 .finish(),
         );
     }
+
+    /// Emit an error when an unknown intrinsic function is called.
+    #[inline]
+    pub fn emit_unknown_intrinsic_function_error(
+        &mut self,
+        identifier: &Spanned<ast::Identifier<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::UnknownIntrinsicFunction as u32)
+                .with_message(format!(
+                    "call to unknown intrinsic function '{}'", identifier.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, identifier.span().into_range()))
+                        .with_message(format!(
+                            "intrinsic function '{}' does not exist", identifier.name
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when there is a type mismatch in an argument provided to an intrinsic
+    /// function.
+    #[inline]
+    pub fn emit_intrinsic_argument_type_mismatch_error(
+        &mut self,
+        identifier: &Spanned<ast::Identifier<'src>>,
+        expr: &Spanned<ast::Expr<'src>>,
+        expected: lang::Type,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, expr.span().into_range()))
+                .with_code(SemanticErrorKind::IntrinsicArgumentTypeMismatch as u32)
+                .with_message(format!(
+                    "type mismatch in argument for intrinsic function '{}': expected '{}', found '{}'",
+                    identifier.name, expected, expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!(
+                            "Expected type '{}' for intrinsic function '{}'", expected, identifier.name
+                        ))
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        ); 
+    }
+
+    /// Emit an error when there is an incorrect number of arguments provided to an intrinsic
+    /// function.
+    #[inline]
+    pub fn emit_intrinsic_argument_count_mismatch_error(
+        &mut self,
+        identifier: &Spanned<ast::Identifier<'src>>,
+        expected: usize,
+        actual: usize,
+        or_more: bool,
+        call_span: lang::Span,
+    ) {
+        let message = if or_more {
+            format!(
+                "incorrect number of arguments for intrinsic function '{}': expected at least {}, found {}",
+                identifier.name, expected, actual
+            )
+        } else {
+            format!(
+                "incorrect number of arguments for intrinsic function '{}': expected {}, found {}",
+                identifier.name, expected, actual
+            )
+        };
+
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
+                .with_code(SemanticErrorKind::IntrinsicArgumentCountMismatch as u32)
+                .with_message(message)
+                .with_label(
+                    ariadne::Label::new((self.filename, identifier.span().into_range()))
+                        .with_message(format!(
+                            "intrinsic function '{}' called with {} arguments, but it expects {}{}",
+                            identifier.name,
+                            actual,
+                            expected,
+                            if or_more { " or more" } else { "" }
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }    
 }

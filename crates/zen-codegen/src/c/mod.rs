@@ -1,5 +1,6 @@
 use crate::c::scope::Scope;
 
+pub mod intrinsic;
 pub mod scope;
 
 /// The code generator for the C backend. This struct is used to generate
@@ -91,6 +92,7 @@ impl Codegen {
 
     /// Generate the necessary includes for the generated C code.
     pub fn generate_includes(&mut self) {
+        self.code += "#include <stdio.h>\n";
         self.code += "#include <stdbool.h>\n";
         self.code += "#include <stddef.h>\n\n";
     }
@@ -268,6 +270,33 @@ impl Codegen {
                     .join(", ");
                 format!("{}({})", ident.name, args)
             }
+            ast::ExprKind::IntrinsicCall(ident, args) => match ident.name {
+                "println" | "print" => {
+                    let newline = ident.name == "println";
+                    let s = args[0].kind.as_string_literal().unwrap();
+                    let fmt = intrinsic::generate_fmt_string(s, &args[1..]);
+                    let fmt_args = args[1..]
+                        .iter()
+                        .map(|arg| self.generate_fmt_args(arg))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Generate the appropriate printf call based on whether there are
+                    // arguments to print or not, and whether a newline is needed.
+                    if fmt_args.is_empty() {
+                        if newline {
+                            format!("printf(\"{}\\n\")", fmt)
+                        } else {
+                            format!("printf(\"{}\")", fmt)
+                        }
+                    } else if newline {
+                        format!("printf(\"{}\\n\", {})", fmt, fmt_args)
+                    } else {
+                        format!("printf(\"{}\", {})", fmt, fmt_args)
+                    }
+                }
+                _ => unreachable!(),
+            },
             ast::ExprKind::Error(..) => unreachable!(),
         }
     }

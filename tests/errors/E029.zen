@@ -1,0 +1,3 @@
+void main() {
+    @an_unknown_intrinsic();   // E029: Call to an unknown intrinsic function.
+}

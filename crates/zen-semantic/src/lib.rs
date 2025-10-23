@@ -311,6 +311,57 @@ impl<'src> SemanticAnalysis<'src> {
                     self.errors.emit_undefined_function_error(ident);
                 }
             }
+            ast::ExprKind::IntrinsicCall(ident, args) => {
+                // Check each argument expression for semantic correctness.
+                for arg in args.iter_mut() {
+                    self.check_expr(arg, false);
+                }
+
+                match ident.name {
+                    "println" | "print" => {
+                        // Ensure that at least one argument (the format string) is provided.
+                        if args.is_empty() {
+                            self.errors.emit_intrinsic_argument_count_mismatch_error(
+                                ident, 1, 0, true, span,
+                            );
+                            return;
+                        }
+
+                        // Verify that the first argument is a string literal.
+                        let fmt = if let Some(fmt) = args[0].kind.as_string_literal() {
+                            fmt
+                        } else {
+                            self.errors.emit_intrinsic_argument_type_mismatch_error(
+                                ident,
+                                &args[0],
+                                lang::Type::Str,
+                            );
+                            return;
+                        };
+
+                        // Check that the types of the provided arguments are compatible with the
+                        // format specifiers in the format string. Currently, we only support `{}`
+                        // as a placeholder for any type except void.
+                        // TODO: Print a more detailed error message instead of a generic argument
+                        // count/type mismatch error.
+                        let expected_arg_count = fmt.match_indices("{}").count();
+                        let provided_arg_count = args.len() - 1; // Exclude format string
+                        if expected_arg_count != provided_arg_count {
+                            self.errors.emit_intrinsic_argument_count_mismatch_error(
+                                ident,
+                                expected_arg_count + 1,
+                                provided_arg_count + 1,
+                                false,
+                                span,
+                            );
+                        }
+                    }
+                    _ => {
+                        self.errors
+                            .emit_unknown_intrinsic_function_error(ident, span);
+                    }
+                }
+            }
             ast::ExprKind::Literal(x) => {
                 // Ensure that integer literals fit within the bounds of the integer type.
                 match x.ty {
@@ -474,8 +525,8 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
             }
-            ast::ExprKind::FunctionCall(_ident, _) => {
-                if let Some(func) = self.scopes.get_function(_ident.name) {
+            ast::ExprKind::FunctionCall(ident, _) => {
+                if let Some(func) = self.scopes.get_function(ident.name) {
                     expr.ty = func.ret;
                 } else {
                     // If the function is not found, we set the expression's type to `Unknown`
@@ -495,6 +546,14 @@ impl<'src> SemanticAnalysis<'src> {
                     expr.ty = lang::Type::Unknown;
                 }
             }
+            ast::ExprKind::IntrinsicCall(ident, _) => match ident.name {
+                // Set the types for known intrinsic functions. If an intrinsic is not listed
+                // here, we default to `Unknown` type.
+                "println" | "print" => {
+                    expr.ty = lang::Type::Void;
+                }
+                _ => expr.ty = lang::Type::Unknown,
+            },
             ast::ExprKind::Literal(_) => {
                 // Literal types should be inferred based on their value and context. For now,
                 // we assume all literals are integers until we implement proper literal types.

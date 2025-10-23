@@ -185,7 +185,37 @@ pub enum ExprKind<'src> {
     // and the second element is a list of expressions that are passed as arguments to the function
     FunctionCall(Box<Spanned<Identifier<'src>>>, Vec<Spanned<Expr<'src>>>),
 
+    /// An intrinsic function call. The first element is the identifier of the intrinsic function
+    /// being called, and the second element is a list of expressions that are passed as arguments
+    /// to the intrinsic function. Intrinsic functions are built-in functions that are provided by
+    /// the language and are not defined by the user.
+    IntrinsicCall(Box<Spanned<Identifier<'src>>>, Vec<Spanned<Expr<'src>>>),
+
     /// A error that is used to indicate a parsing error. This variant should not be present
     /// in the final AST that will be passed to the code generator.
     Error(Span),
+}
+
+impl ExprKind<'_> {
+    /// If the expression is a string literal, returns its value as a `&str`. Otherwise,
+    /// returns `None`.
+    #[must_use]
+    pub fn as_string_literal(&self) -> Option<&str> {
+        if let ExprKind::String(s) = self {
+            Some(s.0.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// If the expression is a literal, returns a reference to the `Literal`. Otherwise,
+    /// returns `None`.
+    #[must_use]
+    pub fn as_literal(&self) -> Option<&Literal<'_>> {
+        if let ExprKind::Literal(lit) = self {
+            Some(&lit.0)
+        } else {
+            None
+        }
+    }
 }

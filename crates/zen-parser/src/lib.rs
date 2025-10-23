@@ -289,7 +289,7 @@ where
         // so a function call can also be just an identifier followed by empty
         // parentheses, like `foo()`.
         let call = ident_parser()
-            .then(items.delimited_by(
+            .then(items.clone().delimited_by(
                 just(lexer::Token::Delimiter("(")),
                 just(lexer::Token::Delimiter(")")),
             ))
@@ -297,6 +297,26 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::FunctionCall(Box::new(function), args),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            })
+            .boxed();
+
+        // An intrinsic function call is similar to a regular function call, but it is
+        // prefixed with the `@` symbol. Intrinsic functions are built-in functions
+        // that are provided by the language and are not defined by the user.
+        let intrinsic_call = just(lexer::Token::Operator("@"))
+            .ignore_then(ident_parser())
+            .then(items.delimited_by(
+                just(lexer::Token::Delimiter("(")),
+                just(lexer::Token::Delimiter(")")),
+            ))
+            .map_with(|(function, args), e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::IntrinsicCall(Box::new(function), args),
                         ty: lang::Type::Infer,
                     },
                     e.span(),
@@ -317,6 +337,7 @@ where
                     e.span(),
                 )
             })
+            .or(intrinsic_call)
             .or(call)
             .or(identifier)
             .or(string)
