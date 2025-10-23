@@ -540,7 +540,10 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::Identifier(identifier) => {
                 // Identifier type is always explicited during their declaration. So we can
                 // simply look it up in the symbol table and assign the variable's type to the
-                // expression.
+                // expression. We handle the case where the variable is not found by emitting an
+                // undefined variable error and setting the expression's type to `Unknown`. This is
+                // done here during inference to avoid having the lookup inside the symbol table
+                // multiple times (once during inference and once during checking).
                 if let Some(var) = self.scopes.get_variable(identifier.name) {
                     expr.ty = var.ty;
                 } else {
