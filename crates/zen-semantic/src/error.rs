@@ -792,7 +792,7 @@ impl<'src> SemanticDiagnostic<'src> {
                 ))
                 .with_label(
                     ariadne::Label::new((self.filename, expr.span().into_range()))
-                        .with_message(format!("Operand is a string literal"))
+                        .with_message("Operand is a string literal")
                         .with_color(Color::Red),
                 )
                 .finish(),

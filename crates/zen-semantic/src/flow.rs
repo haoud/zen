@@ -69,7 +69,7 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
 }
 
 /// Check if all paths in the given statements list return a value.
-pub fn returns_in_all_paths<'a, 'src>(stmts: &'a [Spanned<ast::Stmt<'src>>]) -> bool {
+pub fn returns_in_all_paths(stmts: &[Spanned<ast::Stmt<'_>>]) -> bool {
     for stmt in stmts {
         match &stmt.kind {
             ast::StmtKind::If(_, then, or) => {

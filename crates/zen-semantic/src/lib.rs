@@ -1,8 +1,5 @@
 use crate::error::SemanticDiagnostic;
-use {
-    ast,
-    lang::{self, Spanned},
-};
+use lang::{self, Spanned};
 
 pub mod error;
 pub mod flow;
@@ -525,7 +522,12 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
             }
-            ast::ExprKind::FunctionCall(ident, _) => {
+            ast::ExprKind::FunctionCall(ident, args) => {
+                // Recursively infer types of each argument expression.
+                for argument in args {
+                    self.infer_expr(argument);
+                }
+
                 if let Some(func) = self.scopes.get_function(ident.name) {
                     expr.ty = func.ret;
                 } else {
@@ -546,14 +548,21 @@ impl<'src> SemanticAnalysis<'src> {
                     expr.ty = lang::Type::Unknown;
                 }
             }
-            ast::ExprKind::IntrinsicCall(ident, _) => match ident.name {
-                // Set the types for known intrinsic functions. If an intrinsic is not listed
-                // here, we default to `Unknown` type.
-                "println" | "print" => {
-                    expr.ty = lang::Type::Void;
+            ast::ExprKind::IntrinsicCall(ident, args) => {
+                // Recursively infer types of each argument expression.
+                for argument in args {
+                    self.infer_expr(argument);
                 }
-                _ => expr.ty = lang::Type::Unknown,
-            },
+
+                match ident.name {
+                    // Set the types for known intrinsic functions. If an intrinsic is not listed
+                    // here, we default to `Unknown` type.
+                    "println" | "print" => {
+                        expr.ty = lang::Type::Void;
+                    }
+                    _ => expr.ty = lang::Type::Unknown,
+                }
+            }
             ast::ExprKind::Literal(_) => {
                 // Literal types should be inferred based on their value and context. For now,
                 // we assume all literals are integers until we implement proper literal types.

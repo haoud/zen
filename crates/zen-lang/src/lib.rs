@@ -306,12 +306,7 @@ impl<'src> Literal<'src> {
     /// the literal is not a valid unsigned integer or if it is out of range for a 64-bit
     /// unsigned integer.
     pub fn parse_u64(&self) -> Result<u64, std::num::ParseIntError> {
-        match self.base {
-            LiteralBase::Binary => u64::from_str_radix(self.literal, 2),
-            LiteralBase::Octal => u64::from_str_radix(self.literal, 8),
-            LiteralBase::Decimal => u64::from_str_radix(self.literal, 10),
-            LiteralBase::Hexadecimal => u64::from_str_radix(self.literal, 16),
-        }
+        u64::from_str_radix(self.literal, u32::from(self.base))
     }
 
     /// Parse the literal as a 64-bit signed integer. This function will return an error if
@@ -330,12 +325,10 @@ impl<'src> Literal<'src> {
             } else {
                 Ok(!(num as i64))
             }
+        } else if num > i64::MAX as u64 {
+            Err(())
         } else {
-            if num > i64::MAX as u64 {
-                Err(())
-            } else {
-                Ok(num as i64)
-            }
+            Ok(num as i64)
         }
     }
 }
@@ -349,10 +342,10 @@ impl core::fmt::Display for Literal<'_> {
 /// The different bases that a literal can be represented in.
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum LiteralBase {
-    Binary,
-    Octal,
-    Decimal,
-    Hexadecimal,
+    Binary = 2,
+    Octal = 8,
+    Decimal = 10,
+    Hexadecimal = 16,
 }
 
 impl LiteralBase {
@@ -365,6 +358,12 @@ impl LiteralBase {
             Self::Decimal => "",
             Self::Hexadecimal => "0x",
         }
+    }
+}
+
+impl From<LiteralBase> for u32 {
+    fn from(base: LiteralBase) -> Self {
+        base as u32
     }
 }
 

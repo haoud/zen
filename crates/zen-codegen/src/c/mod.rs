@@ -135,7 +135,7 @@ impl Codegen {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        self.code += &args;
+        self.code += args;
 
         // If this is a prototype, we need to add a semicolon at the
         // end of the function declaration.
