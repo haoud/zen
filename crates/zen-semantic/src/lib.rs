@@ -180,6 +180,21 @@ impl<'src> SemanticAnalysis<'src> {
                         self.scopes.exit_scope();
                     }
                 }
+                ast::StmtKind::While(cond, body) => {
+                    // Check the condition expression
+                    self.check_expr(cond, false);
+
+                    // Ensure that the condition expression evaluates to a boolean type.
+                    if !cond.ty.is_boolean() {
+                        self.errors
+                            .emit_non_boolean_in_conditional_error(cond, stmt_span);
+                    }
+
+                    // Check the statements in the loop body
+                    self.scopes.enter_scope();
+                    self.check_statements(proto.clone(), &mut body.stmts, stmt_span);
+                    self.scopes.exit_scope();
+                }
                 ast::StmtKind::Expr(expr) => {
                     self.check_expr(expr, false);
                     // TODO: Consider warning if the expression's type is not `void` (i.e., its
@@ -420,6 +435,12 @@ impl<'src> SemanticAnalysis<'src> {
                     for stmt in &mut or.stmts {
                         self.infer_stmt(stmt);
                     }
+                }
+            }
+            ast::StmtKind::While(cond, body) => {
+                self.infer_expr(cond);
+                for stmt in &mut body.stmts {
+                    self.infer_stmt(stmt);
                 }
             }
             ast::StmtKind::Expr(expr) => {

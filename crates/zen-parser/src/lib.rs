@@ -205,6 +205,21 @@ where
                 )
             });
 
+        let while_stmt = just(lexer::Token::Keyword("while"))
+            .ignore_then(expr_parser().delimited_by(
+                just(lexer::Token::Delimiter("(")),
+                just(lexer::Token::Delimiter(")")),
+            ))
+            .then(block.clone())
+            .map_with(|(condition, body), e| {
+                Spanned::new(
+                    ast::Stmt {
+                        kind: ast::StmtKind::While(Box::new(condition), Box::new(body)),
+                    },
+                    e.span(),
+                )
+            });
+
         // An expression statement is simply an expression followed by a semicolon. The expression
         // is evaluated, and its result is discarded. This is useful for expressions that have
         // side effects, such as function calls.
@@ -225,6 +240,7 @@ where
             var_expr,
             assign_op_expr,
             if_stmt,
+            while_stmt,
             expr_stmt,
         ))
         .boxed()

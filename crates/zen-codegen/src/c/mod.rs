@@ -198,6 +198,11 @@ impl Codegen {
                     .unwrap_or_default();
                 format!("if ({cond}) {then_block}{else_block}")
             }
+            ast::StmtKind::While(cond, body) => {
+                let cond = self.generate_expr(cond);
+                let body = self.generate_block(body);
+                format!("while ({cond}) {body}")
+            }
             ast::StmtKind::Expr(expr) => {
                 let expr = self.generate_expr(expr);
                 format!("{expr};")

@@ -1,9 +1,20 @@
-void main(argc: int) {
-    let demo := true;
-    let progress := 55;
+/// This function calculates the factorial of a number using a while loop
+/// instead of recursion to avoid stack overflow for large n and to test
+/// the newly while loop implementation :)
+int factorial(num: int) {
+    if (num < 0) {
+        return 0;
+    }
 
-    @println("Hello, {}!", "world");
-    @println("Argument count: {}", argc);
-    @println("");
-    @println("Progress: {}% ({})", progress, demo);
+    var acc := 1;
+    var n := num;
+    while (n > 0) {
+        acc *= n;
+        n -= 1;
+    }
+    return acc;
+}
+
+void main() {
+    @println("Factorial of 5 is {}", factorial(5));
 }

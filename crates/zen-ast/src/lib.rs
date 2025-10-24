@@ -134,6 +134,10 @@ pub enum StmtKind<'src> {
         Option<Box<Spanned<Block<'src>>>>,
     ),
 
+    /// A while statement. The first element is the condition expression, and the second
+    /// element is the block of statements to execute while the condition is true.
+    While(Box<Spanned<Expr<'src>>>, Box<Spanned<Block<'src>>>),
+
     /// An expression statement. This is simply one or more expressions that are terminated
     /// by a semicolon. The element is the expression being evaluated. This is useful for
     /// expressions that have side effects, such as function calls.

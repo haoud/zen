@@ -69,6 +69,7 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
 }
 
 /// Check if all paths in the given statements list return a value.
+#[must_use]
 pub fn returns_in_all_paths(stmts: &[Spanned<ast::Stmt<'_>>]) -> bool {
     for stmt in stmts {
         match &stmt.kind {
@@ -87,6 +88,11 @@ pub fn returns_in_all_paths(stmts: &[Spanned<ast::Stmt<'_>>]) -> bool {
                 if then_returns && else_returns {
                     return true;
                 }
+            }
+            ast::StmtKind::While(_, _) => {
+                // Even if the while loop contains a return statement, we cannot guarantee that it
+                // will always execute, so we cannot conclude that all paths return.
+                continue;
             }
             ast::StmtKind::Return(_) => return true,
             _ => {}
