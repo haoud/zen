@@ -15,6 +15,10 @@ int factorial(num: int) {
     return acc;
 }
 
+void while_loop() {
+    
+}
+
 void main() {
     @println("Factorial of 5 is {}", factorial(5));
 }

@@ -81,22 +81,13 @@ impl core::fmt::Display for Token<'_> {
 #[must_use]
 pub fn lexer<'a>()
 -> impl Parser<'a, &'a str, Vec<Spanned<Token<'a>>>, extra::Err<Rich<'a, char, Span>>> {
-    // A simple lexer for parsing keywords.
-    let keyword = choice((
-        just("return"),
-        just("true"),
-        just("false"),
-        just("let"),
-        just("var"),
-        just("mut"),
-        just("if"),
-        just("else"),
-        just("while"),
-    ))
-    .map(Token::Keyword);
-
-    // A lexer for parsing C-style identifiers
-    let ident = text::ascii::ident().map(Token::Identifier);
+    // A lexer for parsing C-style identifiers and keywords.
+    let ident = text::ascii::ident().map(|ident| match ident {
+        "return" | "true" | "false" | "let" | "var" | "mut" | "if" | "else" | "while" => {
+            Token::Keyword(ident)
+        }
+        _ => Token::Identifier(ident),
+    });
 
     // A simpler parser for integers that supports different
     // common bases for integers (e.g. 0x for hexadecimal, 0b
@@ -176,7 +167,7 @@ pub fn lexer<'a>()
     .map(Token::Delimiter);
 
     // A single token can be one of the above
-    let token = choice((keyword, ident, operator, delimiter, number, string));
+    let token = choice((ident, operator, delimiter, number, string));
 
     // A parser for comments. Comments start with `//` and end with a newline
     // character. Comments are ignored by the parser and are not returned as tokens
