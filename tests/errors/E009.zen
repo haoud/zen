@@ -1,4 +1,4 @@
-int main() {
-    let a : bool = 4;   // E009: Type mismatch in variable declaration
-    return a;
+void main() {
+    let variable : bool = 4;            // E009: Type mismatch in variable declaration
+    let array : bool[3] = {1, 2, 3};    // E009: Type mismatch in variable declaration
 }

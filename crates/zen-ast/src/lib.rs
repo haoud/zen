@@ -174,6 +174,9 @@ pub enum ExprKind<'src> {
     /// A string value.
     String(Spanned<String>),
 
+    /// A list of expressions
+    List(Vec<Spanned<Expr<'src>>>),
+
     /// A binary operation. The first element is the operator, the second element is the left-hand
     /// side expression, and the third element is the right-hand side expression.
     Binary(BinaryOp, Box<Spanned<Expr<'src>>>, Box<Spanned<Expr<'src>>>),

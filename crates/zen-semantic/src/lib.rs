@@ -35,6 +35,14 @@ impl<'src> SemanticAnalysis<'src> {
         for function in funcs.iter_mut() {
             let span = function.span();
 
+            // Verify that array types are not used as function parameter types.
+            if let lang::Type::Array(_, _) = function.prototype.ret.0 {
+                self.errors.emit_array_type_as_function_return_type_error(
+                    function.prototype.ret.span(),
+                    &function.prototype,
+                );
+            }
+
             self.scopes.insert_function(&mut self.errors, function);
             self.scopes.enter_scope();
             for param in &function.prototype.params {
@@ -50,7 +58,7 @@ impl<'src> SemanticAnalysis<'src> {
                         symbol::Variable {
                             mutable: param.mutable,
                             name: param.ident.name,
-                            ty: param.ty.0,
+                            ty: param.ty.0.clone(),
                         },
                         param.span(),
                     ),
@@ -98,7 +106,7 @@ impl<'src> SemanticAnalysis<'src> {
                         // Verify that the return expression type matches the function's return type.
                         if expr.ty != proto.ret.0 && expr.ty.is_valid() {
                             self.errors
-                                .emit_return_type_mismatch_error(&proto, stmt_span, expr.ty);
+                                .emit_return_type_mismatch_error(&proto, stmt_span, &expr.ty);
                         }
                     } else {
                         // Verify that the function's return type is void if no expression
@@ -318,7 +326,7 @@ impl<'src> SemanticAnalysis<'src> {
                         }
                     }
 
-                    expr.ty = func.ret;
+                    expr.ty = func.ret.clone();
                 } else {
                     self.errors.emit_undefined_function_error(ident);
                 }
@@ -391,8 +399,31 @@ impl<'src> SemanticAnalysis<'src> {
                     lang::Type::Bool => {
                         unreachable!("Boolean literals should always have type Bool after parsing")
                     }
+                    lang::Type::Array(_, _) => {
+                        unreachable!("Array literals should be represented as List expressions")
+                    }
                     lang::Type::Infer | lang::Type::Unknown => {
                         unreachable!("Literal types should be inferred during type inference")
+                    }
+                }
+            }
+            ast::ExprKind::List(items) => {
+                // Check each item in the initializer list for semantic correctness.
+                for item in items.iter_mut() {
+                    self.check_expr(item, false);
+                }
+
+                // Check for incompatible types in the initializer list
+                if let Some(first) = items.first() {
+                    // TODO: Currently, we consider that the first item's type is the expected type
+                    // for the entire list. In the future, we may want to find the expected type for
+                    // the list from the context in which it is used (e.g., variable declaration
+                    // type, function parameter type, etc.).
+                    for item in items.iter() {
+                        if item.ty != first.ty && item.ty.is_valid() {
+                            self.errors
+                                .emit_incompatible_types_in_initializer_list_error(item, &first.ty);
+                        }
                     }
                 }
             }
@@ -465,7 +496,7 @@ impl<'src> SemanticAnalysis<'src> {
         // Infer the type of the expression if it is not already known.
         if *ty == lang::Type::Infer {
             self.infer_expr(expr);
-            *ty = expr.ty;
+            *ty = expr.ty.clone();
         }
 
         // Insert the new variable into the current scope. If a variable with the same
@@ -475,7 +506,7 @@ impl<'src> SemanticAnalysis<'src> {
             Spanned::new(
                 symbol::Variable {
                     name: ident.name,
-                    ty: *ty,
+                    ty: ty.clone(),
                     mutable,
                 },
                 span,
@@ -523,7 +554,7 @@ impl<'src> SemanticAnalysis<'src> {
                         // we set the type to `Unknown` to indicate a type inference failure.
                         // TODO: Implement proper type coercion rules here.
                         if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
-                            expr.ty = lhs.ty;
+                            expr.ty = lhs.ty.clone();
                         } else {
                             expr.ty = lang::Type::Unknown;
                         }
@@ -535,7 +566,7 @@ impl<'src> SemanticAnalysis<'src> {
                     lang::UnaryOp::Neg => {
                         // Recursively infer the type of the inner expression if needed.
                         self.infer_expr(rhs);
-                        expr.ty = rhs.ty;
+                        expr.ty = rhs.ty.clone();
                     }
                     lang::UnaryOp::Not => {
                         // The logical NOT operator always yields a boolean result.
@@ -550,7 +581,7 @@ impl<'src> SemanticAnalysis<'src> {
                 }
 
                 if let Some(func) = self.scopes.get_function(ident.name) {
-                    expr.ty = func.ret;
+                    expr.ty = func.ret.clone();
                 } else {
                     // If the function is not found, we set the expression's type to `Unknown`
                     // but we do not emit an error here, as the function call will be checked
@@ -566,7 +597,7 @@ impl<'src> SemanticAnalysis<'src> {
                 // done here during inference to avoid having the lookup inside the symbol table
                 // multiple times (once during inference and once during checking).
                 if let Some(var) = self.scopes.get_variable(identifier.name) {
-                    expr.ty = var.ty;
+                    expr.ty = var.ty.clone();
                 } else {
                     self.errors.emit_undefined_variable_error(identifier);
                     expr.ty = lang::Type::Unknown;
@@ -585,6 +616,24 @@ impl<'src> SemanticAnalysis<'src> {
                         expr.ty = lang::Type::Void;
                     }
                     _ => expr.ty = lang::Type::Unknown,
+                }
+            }
+            ast::ExprKind::List(items) => {
+                // Recursively infer types for each item in the list.
+                for item in items.iter_mut() {
+                    self.infer_expr(item);
+                }
+
+                // If all items are of the same type, the list type is that type. Otherwise, we
+                // set it to `Unknown` to indicate a type inference failure.
+                if let Some(first) = items.first() {
+                    if items.iter().all(|item| item.ty == first.ty) {
+                        expr.ty = lang::Type::Array(Box::new(first.ty.clone()), items.len() as u64);
+                    } else {
+                        expr.ty = lang::Type::Unknown;
+                    }
+                } else {
+                    todo!("Implement empty list type inference");
                 }
             }
             ast::ExprKind::Literal(_) => {

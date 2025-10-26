@@ -79,7 +79,7 @@ impl<T: Debug> std::fmt::Debug for Spanned<T> {
 }
 
 /// The types supported by the language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     /// A type that represents an unknown type. This is primarily used to indicate
     /// an error in type checking, where the type could not be determined. This type
@@ -93,6 +93,10 @@ pub enum Type {
     /// instances of this type should be replaced with a concrete type, and any remaining instances
     /// of this type indicate a failure to infer the type.
     Infer,
+
+    /// An array type. The first element is the type of the elements in the array, and the second
+    /// element is the size of the array. All elements in the array must have the same type.
+    Array(Box<Type>, u64),
 
     /// A string type. Currently, strings are represented as a sequence of characters and do not
     /// have a fixed length. Future versions of the language may introduce more complex string
@@ -126,6 +130,7 @@ impl Type {
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Type::Array(ty, size) => write!(f, "{}[{}]", ty, size),
             Type::Unknown => write!(f, "<unknown>"),
             Type::Infer => write!(f, "<infer>"),
             Type::Str => write!(f, "string"),

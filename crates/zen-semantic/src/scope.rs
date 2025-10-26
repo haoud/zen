@@ -161,7 +161,7 @@ impl<'src> Scope<'src> {
                         symbol::Variable {
                             mutable: param.mutable,
                             name: param.ident.name,
-                            ty: param.ty.0,
+                            ty: param.ty.0.clone(),
                         },
                         param.span(),
                     )
@@ -173,7 +173,7 @@ impl<'src> Scope<'src> {
                 .insert_function(Spanned::new(
                     symbol::Function {
                         name: func.0.prototype.ident.name,
-                        ret: func.0.prototype.ret.0,
+                        ret: func.0.prototype.ret.0.clone(),
                         params,
                     },
                     func.span(),

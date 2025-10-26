@@ -107,6 +107,12 @@ pub enum SemanticErrorKind {
 
     /// Incorrect number of arguments provided to an intrinsic function.
     IntrinsicArgumentCountMismatch = 31,
+
+    /// Initializer list contains elements of incompatible types.
+    IncompatibleTypesInInitializerList = 32,
+
+    // An array type is being declarared as an return type of a function.
+    ArrayTypeAsFunctionReturnType = 33,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -222,7 +228,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
         ret_span: lang::Span,
-        ret_type: lang::Type,
+        ret_type: &lang::Type,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, ret_span.into_range()))
@@ -988,5 +994,55 @@ impl<'src> SemanticDiagnostic<'src> {
                 )
                 .finish(),
         );
-    }    
+    }
+
+    /// Emit an error when an initializer list contains elements of incompatible types.
+    #[cold]
+    pub fn emit_incompatible_types_in_initializer_list_error(
+        &mut self,
+        elem: &Spanned<ast::Expr<'src>>,
+        expected: &lang::Type,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, elem.span().into_range()))
+                .with_code(SemanticErrorKind::IncompatibleTypesInInitializerList as u32)
+                .with_message(format!(
+                    "incompatible type in initializer list: expected '{}', found '{}'",
+                    expected, elem.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, elem.span().into_range()))
+                        .with_message(format!(
+                            "This element is of type '{}'", elem.ty
+                        ))
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an array is declared in a function return type.
+    #[cold]
+    pub fn emit_array_type_as_function_return_type_error(
+        &mut self,
+        fn_span: lang::Span,
+        proto: &ast::FunctionPrototype<'src>,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
+                .with_code(SemanticErrorKind::ArrayTypeAsFunctionReturnType as u32)
+                .with_message(format!(
+                    "array type cannot be used as return type of function '{}'",
+                    proto.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, fn_span.into_range()))
+                        .with_message(format!(
+                            "function '{}' declared with array return type here", proto.ident.name
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
 }

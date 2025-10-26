@@ -33,7 +33,7 @@ where
         .or_not()
         .then(ident_parser())
         .then_ignore(just(lexer::Token::Delimiter(":")))
-        .then(builtin_type_parser())
+        .then(type_parser())
         .map_with(|((mutable, name), ty), e| {
             Spanned::new(
                 ast::FunctionParameter {
@@ -47,7 +47,7 @@ where
         .separated_by(just(lexer::Token::Delimiter(",")))
         .collect();
 
-    builtin_type_parser()
+    type_parser()
         .then(ident_parser())
         .then(parameters.delimited_by(
             just(lexer::Token::Delimiter("(")),
@@ -125,7 +125,7 @@ where
         let let_expr = just(lexer::Token::Keyword("let"))
             .ignore_then(ident_parser())
             .then_ignore(just(lexer::Token::Delimiter(":")))
-            .then(builtin_type_parser().or_not())
+            .then(type_parser().or_not())
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
             .then_ignore(just(lexer::Token::Delimiter(";")))
@@ -148,7 +148,7 @@ where
         let var_expr = just(lexer::Token::Keyword("var"))
             .ignore_then(ident_parser())
             .then_ignore(just(lexer::Token::Delimiter(":")))
-            .then(builtin_type_parser().or_not())
+            .then(type_parser().or_not())
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
             .then_ignore(just(lexer::Token::Delimiter(";")))
@@ -292,13 +292,30 @@ where
             )
         });
 
-        // A list of expressions separated by commas. This is mostly useful for function
-        // call arguments, but can also be used in other places where a list of expressions
-        // is expected.
+        // A list of expressions separated by commas. This is used for parsing
+        // function call arguments as well as initializer lists.
         let items = expr
             .clone()
             .separated_by(just(lexer::Token::Delimiter(",")))
             .collect();
+
+        // Parse an initializer list, which is a list of expressions separated by commas
+        // and enclosed in braces `{}`. For example: `{1, 2, 3}`.
+        let list = items
+            .clone()
+            .delimited_by(
+                just(lexer::Token::Delimiter("{")),
+                just(lexer::Token::Delimiter("}")),
+            )
+            .map_with(|elements, e| {
+                Spanned::new(
+                    ast::Expr {
+                        kind: ast::ExprKind::List(elements),
+                        ty: lang::Type::Infer,
+                    },
+                    e.span(),
+                )
+            });
 
         // A function call is an identifier followed by a list of arguments enclosed
         // in parentheses. For example: `foo(a, b + 2)`. The arguments are optional,
@@ -353,6 +370,7 @@ where
                     e.span(),
                 )
             })
+            .or(list)
             .or(intrinsic_call)
             .or(call)
             .or(identifier)
@@ -594,20 +612,46 @@ where
     }
 }
 
-/// A parser for built-in types in the language. Currently, the only built-in
-/// type is `int`, but more types can be added in the future, like `float`, 'bool',
-/// `char`... However, user-defined types (e.g. structs, enums, unions...) will not
-/// be handled by this parser.
+/// A parser for type in the language. Currently, it supports built-in types like
+/// `bool`, `int`, `str`, `void`, and array types like `<type>[<size>]`.
 #[must_use]
-pub fn builtin_type_parser<'tokens, 'src: 'tokens, I>()
+pub fn type_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    select! {
+    let ty = select! {
         lexer::Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
         lexer::Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
         lexer::Token::Identifier("str") = e => Spanned::new(lang::Type::Str, e.span()),
         lexer::Token::Identifier("void") = e => Spanned::new(lang::Type::Void, e.span()),
-    }
+    };
+
+    // Parse a number literal.
+    let number = select! {
+        lexer::Token::Number(val) = e => Spanned::new(
+            ast::Literal {
+                ty: lang::Type::Int,
+                value: val,
+            },
+            e.span()
+        )
+    };
+
+    // An array type is of the form `<type>[<size>]`, where `<type>` is a built-in type
+    // and `<size>` is a number literal representing the size of the array.
+    // TODO: Do not crash on invalid number literals.
+    let array = ty
+        .clone()
+        .then_ignore(just(lexer::Token::Delimiter("[")))
+        .then(number)
+        .then_ignore(just(lexer::Token::Delimiter("]")))
+        .map_with(|(ty, count), e| {
+            Spanned::new(
+                lang::Type::Array(Box::new(ty.0), count.value.parse_u64().unwrap()),
+                e.span(),
+            )
+        });
+
+    choice((array, ty))
 }

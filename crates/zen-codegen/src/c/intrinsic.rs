@@ -8,9 +8,32 @@ impl Codegen {
     /// strings before being passed to the formatting function in order to have a nice output.
     #[must_use]
     pub fn generate_fmt_args(&mut self, expr: &ast::Expr) -> String {
-        match expr.ty {
-            Type::Bool => format!("({}) ? \"true\" : \"false\"", self.generate_expr(expr)),
-            _ => self.generate_expr(expr),
+        match &expr.ty {
+            Type::Bool => format!(
+                "({}) ? \"true\" : \"false\"",
+                self.generate_expr(expr, false)
+            ),
+            Type::Array(_, _) => match &expr.kind {
+                ast::ExprKind::List(items) => {
+                    let elements = items
+                        .iter()
+                        .map(|item| self.generate_fmt_args(&item.0))
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    format!("{}", elements)
+                }
+                ast::ExprKind::Identifier(_) => {
+                    // FIXME: WE NEED THE SYMBOL TABLE HERE TO GET THE TYPE OF THE IDENTIFIER
+                    /*let elements = (0..*size)
+                        .map(|i| ident.name.to_owned() + "[" + &i.to_string() + "]")
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    format!("{}", elements)*/
+                    todo!()
+                }
+                _ => unreachable!(),
+            },
+            _ => self.generate_expr(expr, false),
         }
     }
 }
@@ -32,7 +55,7 @@ pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
         if c == '{' && chars.peek() == Some(&'}') {
             // Consume the closing '}' and add the appropriate format specifier
             // to the result string
-            result.push_str(get_fmt_specifier(args[idx].ty));
+            result.push_str(&get_fmt_specifier(&args[idx].ty));
             chars.next();
             idx += 1;
         } else if c == '%' {
@@ -52,11 +75,20 @@ pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
 /// Panics if the type is `Unknown`, `Infer`, or `Void`, as `Unknown` and `Infer` types should not
 /// appear in the AST at this stage and `Void` type cannot be formatted and should only be used
 /// for functions that do not return a value.
-pub const fn get_fmt_specifier(ty: Type) -> &'static str {
+pub fn get_fmt_specifier(ty: &Type) -> String {
     match ty {
-        Type::Bool => "%s", // Booleans will be printed as "true" or "false"
-        Type::Int => "%d",
-        Type::Str => "%s",
+        Type::Bool => "%s".to_owned(), // Booleans will be printed as "true" or "false"
+        Type::Int => "%d".to_owned(),
+        Type::Str => "\\\"%s\\\"".to_owned(),
+        Type::Array(ty, len) => {
+            format!(
+                "[{}]",
+                (0..*len)
+                    .map(|_| get_fmt_specifier(ty))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )
+        }
         Type::Unknown | Type::Infer | Type::Void => unreachable!(),
     }
 }

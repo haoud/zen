@@ -117,7 +117,7 @@ impl Codegen {
         let ret = self.generate_type(&func.prototype.ret);
 
         // Generate the function return type and name
-        self.code += &ret;
+        self.code += &ret.0; // FIXME: Handle arrays in return types
         self.code += " ";
         self.code += func.prototype.ident.name;
         self.code += "(";
@@ -129,9 +129,9 @@ impl Codegen {
             .iter()
             .map(|param| {
                 let mutable = if !param.mutable { "const " } else { "" };
-                let ty = self.generate_type(&param.ty);
+                let (ty, array) = self.generate_type(&param.ty);
                 let name = &param.ident.name;
-                format!("{mutable}{ty} {name}")
+                format!("{mutable}{ty} {name}{array}")
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -169,28 +169,31 @@ impl Codegen {
         match &stmt.kind {
             ast::StmtKind::Return(expr) => {
                 if let Some(expr) = expr.as_ref() {
-                    format!("return {};", self.generate_expr(expr))
+                    format!("return {};", self.generate_expr(expr, false))
                 } else {
                     "return;".to_string()
                 }
             }
             ast::StmtKind::Let(ident, ty, expr) => {
-                let ctype = self.generate_type(ty);
-                let value = self.generate_expr(expr);
-                format!("const {ctype} {ident} = {value};", ident = ident.name)
+                let (ctype, array) = self.generate_type(ty);
+                let value = self.generate_expr(expr, false);
+                format!(
+                    "const {ctype} {ident}{array}  = {value};",
+                    ident = ident.name
+                )
             }
             ast::StmtKind::Var(ident, ty, expr) => {
-                let ctype = self.generate_type(ty);
-                let value = self.generate_expr(expr);
-                format!("{ctype} {ident} = {value};", ident = ident.name)
+                let (ctype, array) = self.generate_type(ty);
+                let value = self.generate_expr(expr, false);
+                format!("{ctype} {ident}{array} = {value};", ident = ident.name)
             }
             ast::StmtKind::Assign(op, ident, expr) => {
                 let op = op.as_ref().map(lang::BinaryOp::as_str).unwrap_or("");
-                let expr = self.generate_expr(expr);
+                let expr = self.generate_expr(expr, false);
                 format!("{ident} {op}= {expr};", ident = ident.name,)
             }
             ast::StmtKind::If(cond, then_block, else_block) => {
-                let cond = self.generate_expr(cond);
+                let cond = self.generate_expr(cond, false);
                 let then_block = self.generate_block(then_block);
                 let else_block = else_block
                     .as_ref()
@@ -199,12 +202,12 @@ impl Codegen {
                 format!("if ({cond}) {then_block}{else_block}")
             }
             ast::StmtKind::While(cond, body) => {
-                let cond = self.generate_expr(cond);
+                let cond = self.generate_expr(cond, false);
                 let body = self.generate_block(body);
                 format!("while ({cond}) {body}")
             }
             ast::StmtKind::Expr(expr) => {
-                let expr = self.generate_expr(expr);
+                let expr = self.generate_expr(expr, false);
                 format!("{expr};")
             }
             ast::StmtKind::Error(..) => unreachable!(),
@@ -244,11 +247,26 @@ impl Codegen {
     /// Generate the C code for the given expression. This function will recursively generate the
     /// C code for the expression and its children. It will return the generated C code as a string.
     #[must_use]
-    pub fn generate_expr(&mut self, expr: &ast::Expr) -> String {
+    pub fn generate_expr(&mut self, expr: &ast::Expr, compound: bool) -> String {
         match &expr.kind {
             ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
             ast::ExprKind::String(s) => format!("\"{}\"", s.0),
+            ast::ExprKind::List(items) => {
+                let list_ty = self.generate_type(&expr.ty);
+                let compound_ty = if compound {
+                    format!("({}{})", list_ty.0, list_ty.1)
+                } else {
+                    "".to_string()
+                };
+
+                let items = items
+                    .iter()
+                    .map(|item| self.generate_expr(item, false))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{} {{{}}}", compound_ty, items)
+            }
             ast::ExprKind::Bool(b) => {
                 if b.0 {
                     "true".to_string()
@@ -257,20 +275,20 @@ impl Codegen {
                 }
             }
             ast::ExprKind::Binary(op, lhs, rhs) => {
-                let lexpr = self.generate_expr(lhs);
-                let rexpr = self.generate_expr(rhs);
+                let lexpr = self.generate_expr(lhs, false);
+                let rexpr = self.generate_expr(rhs, false);
                 let op = op.as_str();
                 format!("({lexpr} {op} {rexpr})")
             }
             ast::ExprKind::Unary(op, expr) => {
-                let expr = self.generate_expr(expr);
+                let expr = self.generate_expr(expr, false);
                 let op = op.as_str();
                 format!("({op}{expr})")
             }
             ast::ExprKind::FunctionCall(ident, args) => {
                 let args = args
                     .iter()
-                    .map(|arg| self.generate_expr(arg))
+                    .map(|arg| self.generate_expr(arg, true))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{}({})", ident.name, args)
@@ -308,6 +326,10 @@ impl Codegen {
 
     /// Convert the built-in Zen types to C types.
     ///
+    /// # Returns
+    /// A tuple containing the C type as a string and any additional information needed for
+    /// the type (e.g. for declaring arrays).
+    ///
     /// # Panics
     /// This function will panic if the type is `Never` or `Infer` is passed to the function:
     ///  - The type checker should have remplaced all Infer types by concrete
@@ -315,12 +337,16 @@ impl Codegen {
     ///  - The Never type has no equivalent in C and should not be used in the
     ///    generated code, since it represents an value that can never be
     ///    constructed.
-    pub fn generate_type(&mut self, ty: &lang::Type) -> String {
+    pub fn generate_type(&mut self, ty: &lang::Type) -> (String, String) {
         match ty {
-            lang::Type::Void => "void".to_string(),
-            lang::Type::Str => "char *".to_string(),
-            lang::Type::Bool => "bool".to_string(),
-            lang::Type::Int => "int".to_string(),
+            lang::Type::Void => ("void".to_string(), "".to_string()),
+            lang::Type::Str => ("char *".to_string(), "".to_string()),
+            lang::Type::Bool => ("bool".to_string(), "".to_string()),
+            lang::Type::Int => ("int".to_string(), "".to_string()),
+            lang::Type::Array(ty, size) => {
+                let ctype = self.generate_type(ty);
+                (ctype.0, format!("[{}]", size))
+            }
             lang::Type::Unknown => {
                 unreachable!("Type::Unknown should not appear in the code generation phase")
             }

@@ -1,24 +1,18 @@
-/// This function calculates the factorial of a number using a while loop
-/// instead of recursion to avoid stack overflow for large n and to test
-/// the newly while loop implementation :)
-int factorial(num: int) {
-    if (num < 0) {
-        return 0;
-    }
-
-    var acc := 1;
-    var n := num;
-    while (n > 0) {
-        acc *= n;
-        n -= 1;
-    }
-    return acc;
+void array_as_param(a: int[5]) {
+    // Do something with the array
 }
 
-void while_loop() {
-    
-}
-
+// A simple Zen program to test array.
 void main() {
-    @println("Factorial of 5 is {}", factorial(5));
+    let explicit : bool[3] = {true, false, true};
+    var inferred := {"Hello", "Zen", "World"};
+
+    @println("Initializer list #1: {}", {true, false, true});
+    @println("Initializer list #2: {}", {"Hello", "Zen", "World"});
+
+    array_as_param({1, 2, 3, 4, 5});
+
+    // Not implemented yet, need a refactoring of the code generator to support array literals
+    // @println("Inferred array: {}", inferred);
+    // @println("Explitcit array: {}", explicit);
 }

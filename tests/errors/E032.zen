@@ -1,0 +1,3 @@
+void main() {
+    let array := {true, 3, "str"};   // E032: Type mismatch in initializer list
+}
