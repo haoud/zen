@@ -1054,25 +1054,18 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_invalid_binary_operation_for_type_error(
         &mut self,
         op: lang::BinaryOp,
-        lhs: &Spanned<ast::Expr<'src>>,
-        rhs: &Spanned<ast::Expr<'src>>,
+        ty: &lang::ty::Type,
         span: lang::Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
                 .with_code(SemanticErrorKind::InvalidBinaryOperationForType as u32)
                 .with_message(format!(
-                    "binary operation '{op}' is not valid for operand types: left is '{}', right is '{}'",
-                    lhs.ty, rhs.ty
+                    "binary operation '{op}' is not valid for operands of type '{}'", ty
                 ))
                 .with_label(
-                    ariadne::Label::new((self.filename, lhs.span().into_range()))
-                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
-                        .with_color(Color::Cyan),
-                )
-                .with_label(
-                    ariadne::Label::new((self.filename, rhs.span().into_range()))
-                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!("Operand is of type '{}'", ty))
                         .with_color(Color::Red),
                 )
                 .finish(),
@@ -1084,18 +1077,18 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_invalid_unary_operation_for_type_error(
         &mut self,
         op: lang::UnaryOp,
-        expr: &Spanned<ast::Expr<'src>>,
+        ty: &lang::ty::Type,
         span: lang::Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
                 .with_code(SemanticErrorKind::InvalidUnaryOperationForType as u32)
                 .with_message(format!(
-                    "unary operation '{op}' is not valid for operand type '{}'", expr.ty
+                    "unary operation '{op}' is not valid for operand of type '{}'", ty
                 ))
                 .with_label(
-                    ariadne::Label::new((self.filename, expr.span().into_range()))
-                        .with_message(format!("Operand is of type '{}'", expr.ty))
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message(format!("Operand is of type '{}'", ty))
                         .with_color(Color::Red),
                 )
                 .finish(),

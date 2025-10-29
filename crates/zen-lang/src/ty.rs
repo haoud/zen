@@ -89,7 +89,7 @@ impl TypeMetadata {
     /// This function will panic if the metadata cannot be built for the given type. This occurs
     /// for types that are not valid for metadata generation, such as `Void`, `Unknown`, or `Infer`.
     #[must_use]
-    pub fn build(ty: Type) -> Self {
+    pub fn build(ty: &Type) -> Self {
         match ty {
             Type::Bool => Self {
                 align: 1,
@@ -121,8 +121,8 @@ impl TypeMetadata {
                 unary_op: vec![],
             },
             Type::Array(ty, length) => {
-                let metadata = TypeMetadata::build(*ty);
-                let size = metadata.size * (length as u32);
+                let metadata = TypeMetadata::build(ty);
+                let size = metadata.size * (*length as u32);
                 Self {
                     align: metadata.align,
                     size,
@@ -203,6 +203,15 @@ impl TypeTable {
             true
         } else {
             false
+        }
+    }
+
+    /// Add a new type to the type table if it does not already exist, using the built-in metadata
+    /// generation function. If the type already exists, this function does nothing.
+    pub fn try_auto_add_type(&mut self, ty: &Type) {
+        if !self.type_exists(&ty) {
+            let metadata = TypeMetadata::build(&ty);
+            self.types.insert(ty.clone(), metadata);
         }
     }
 }

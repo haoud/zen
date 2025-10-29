@@ -158,11 +158,20 @@ impl<'src> SemanticAnalysis<'src> {
                                 .emit_type_mismatch_in_assignment_error(var, expr, span);
                         }
 
-                        // Ensure that compound assignments are not used on boolean variables.
+                        // Ensure that the type support the given operation if it's a compound
+                        // assignment.
                         if let Some(op) = op {
-                            if var.ty.is_boolean() {
-                                self.errors
-                                    .emit_bool_compound_assignment_error(var, *op, span);
+                            self.types.try_auto_add_type(&var.ty);
+                            let ty_metadata = self
+                                .types
+                                .get_type_metadata(&var.ty)
+                                .expect("Type metadata should always exist");
+                            if !ty_metadata.support_binary_op(*op) {
+                                self.errors.emit_invalid_binary_operation_for_type_error(
+                                    *op,
+                                    &expr.ty,
+                                    expr.span(),
+                                );
                             }
                         }
                     } else {
@@ -225,7 +234,6 @@ impl<'src> SemanticAnalysis<'src> {
         self.infer_expr(expr);
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
-                let has_boolean_operand = lhs.ty.is_boolean() || rhs.ty.is_boolean();
                 self.check_expr(lhs, false);
                 self.check_expr(rhs, false);
 
@@ -241,63 +249,43 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
 
-                // Ensure that boolean values are not used in arithmetic operations.
-                if has_boolean_operand && !op.accept_boolean_operands() {
-                    self.errors
-                        .emit_boolean_arithmetic_error(*op, lhs, rhs, span);
-                }
+                // Get the type metadata for the left-hand side type to check if it supports
+                // the given binary operation. Since both sides should have the same type, we only
+                // need to check one side.
+                self.types.try_auto_add_type(&lhs.ty);
+                let ty_metadata = self
+                    .types
+                    .get_type_metadata(&lhs.ty)
+                    .expect("Type metadata should always exist");
 
-                // Ensure that logical operators are only used with boolean operands.
-                if !has_boolean_operand && op.requires_boolean_operands() {
+                // If the operation is not supported by the type, emit an error.
+                if !ty_metadata.support_binary_op(*op) {
                     self.errors
-                        .emit_logical_operator_with_non_boolean_error(*op, lhs, rhs, span);
-                }
-
-                // Disallow binary operations involving string types for now.
-                if lhs.ty == lang::ty::Type::Str || rhs.ty == lang::ty::Type::Str {
-                    self.errors
-                        .emit_invalid_string_binary_operation_error(*op, lhs, rhs, span);
+                        .emit_invalid_binary_operation_for_type_error(*op, &lhs.ty, span);
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
-                match op {
-                    lang::UnaryOp::Neg => {
-                        // Recursively check the inner expression, passing along whether we are in
-                        // a negated context or not. This is needed to correctly handle cases like
-                        // double negation and to ensure proper overflow/underflow checks.
-                        if *op == lang::UnaryOp::Neg {
-                            self.check_expr(rhs, !negated);
-                        } else {
-                            self.check_expr(rhs, negated);
-                        }
+                // Recursively check the inner expression, passing along whether we are in
+                // a negated context or not. This is needed to correctly handle cases like
+                // double negation and to ensure proper overflow/underflow checks.
+                if *op == lang::UnaryOp::Neg {
+                    self.check_expr(rhs, !negated);
+                } else {
+                    self.check_expr(rhs, negated);
+                }
 
-                        // Disallow negation of boolean types.
-                        if *op == lang::UnaryOp::Neg && rhs.ty.is_boolean() {
-                            self.errors.emit_negation_of_non_numeric_type_error(rhs);
-                        }
+                // Get the type metadata for the right-hand side type to check if it supports
+                // the given unary operation.
+                self.types.try_auto_add_type(&rhs.ty);
+                let ty_metadata = self
+                    .types
+                    .get_type_metadata(&rhs.ty)
+                    .expect("Type metadata should always exist");
 
-                        // Disallow negation of string types.
-                        if rhs.ty == lang::ty::Type::Str {
-                            self.errors
-                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
-                        }
-                    }
-                    lang::UnaryOp::Not => {
-                        // Verify that the operand of the logical NOT operator is a boolean. This
-                        // avoids nonsensical expressions like `!42` or `!x` where `x` is an
-                        // integer. This is allowed in C-like languages, but not in Zen since it
-                        // has a strong type system.
-                        self.check_expr(rhs, false);
-                        if !rhs.ty.is_boolean() {
-                            self.errors.emit_logical_not_with_non_boolean_error(rhs);
-                        }
-
-                        // Disallow logical NOT on string types.
-                        if rhs.ty == lang::ty::Type::Str {
-                            self.errors
-                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
-                        }
-                    }
+                // If the operation is not supported by the type, emit an error.
+                if !ty_metadata.support_unary_op(*op) {
+                    self.errors
+                        .emit_invalid_unary_operation_for_type_error(*op, &rhs.ty, span);
                 }
             }
             ast::ExprKind::FunctionCall(ident, args) => {
