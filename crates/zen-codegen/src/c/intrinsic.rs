@@ -98,7 +98,9 @@ pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
     result
 }
 
-/// Returns the C format specifier for a given type.
+/// Returns the C format specifier for a given type. For some types, such as arrays, it will instead
+/// return a composite format specifier that represents the entire structure, since those types are
+/// not natively supported by C's printf function.
 ///
 /// # Panics
 /// Panics if the type is `Unknown`, `Infer`, or `Void`, as `Unknown` and `Infer` types should not

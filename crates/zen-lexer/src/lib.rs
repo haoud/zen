@@ -89,9 +89,8 @@ pub fn lexer<'a>()
         _ => Token::Identifier(ident),
     });
 
-    // A simpler parser for integers that supports different
-    // common bases for integers (e.g. 0x for hexadecimal, 0b
-    // for binary...)
+    // A simpler parser for integers that supports different common bases for integers
+    // (e.g. 0x for hexadecimal, 0b for binary...)
     let number = choice((
         just("0x")
             .ignore_then(text::int(16))

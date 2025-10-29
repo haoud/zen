@@ -642,17 +642,28 @@ where
 
     // An array type is of the form `<type>[<size>]`, where `<type>` is a built-in type
     // and `<size>` is a number literal representing the size of the array.
-    // TODO: Do not crash on invalid number literals.
     let array = ty
         .clone()
         .then_ignore(just(lexer::Token::Delimiter("[")))
-        .then(number)
+        .then(
+            number.validate(|count, e, emitter| match count.value.parse_u64() {
+                Ok(num) => num,
+                Err(_) => {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        format!("Invalid array size: {} (at {})", count.value, e.span()),
+                    ));
+                    // Return a default value to continue parsing. The AST is now poisoned with
+                    // invalid data, but the program will not continue past the parsing phase since
+                    // an error has already been reported. That's why returning a default value here
+                    // is acceptable.
+                    0
+                }
+            }),
+        )
         .then_ignore(just(lexer::Token::Delimiter("]")))
         .map_with(|(ty, count), e| {
-            Spanned::new(
-                lang::ty::Type::Array(Box::new(ty.0), count.value.parse_u64().unwrap()),
-                e.span(),
-            )
+            Spanned::new(lang::ty::Type::Array(Box::new(ty.0), count), e.span())
         });
 
     choice((array, ty))
