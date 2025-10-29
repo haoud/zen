@@ -774,7 +774,7 @@ impl<'src> SemanticDiagnostic<'src> {
                     "cannot perform binary operation '{op}' on string literals: left is '{}', right is '{}'",
                     lhs.ty, rhs.ty
                 ))
-                .with_label(    
+                .with_label(
                     ariadne::Label::new((self.filename, lhs.span().into_range()))
                         .with_message(format!("Left operand is of type '{}'", lhs.ty))
                         .with_color(Color::Cyan),
@@ -1061,7 +1061,8 @@ impl<'src> SemanticDiagnostic<'src> {
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
                 .with_code(SemanticErrorKind::InvalidBinaryOperationForType as u32)
                 .with_message(format!(
-                    "binary operation '{op}' is not valid for operands of type '{}'", ty
+                    "binary operation '{op}' is not valid for operands of type '{}'",
+                    ty
                 ))
                 .with_label(
                     ariadne::Label::new((self.filename, span.into_range()))
@@ -1084,7 +1085,8 @@ impl<'src> SemanticDiagnostic<'src> {
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
                 .with_code(SemanticErrorKind::InvalidUnaryOperationForType as u32)
                 .with_message(format!(
-                    "unary operation '{op}' is not valid for operand of type '{}'", ty
+                    "unary operation '{op}' is not valid for operand of type '{}'",
+                    ty
                 ))
                 .with_label(
                     ariadne::Label::new((self.filename, span.into_range()))
@@ -1095,4 +1097,3 @@ impl<'src> SemanticDiagnostic<'src> {
         );
     }
 }
-
