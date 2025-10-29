@@ -174,18 +174,15 @@ impl Codegen {
                     "return;".to_string()
                 }
             }
-            ast::StmtKind::Let(ident, ty, expr) => {
+
+            ast::StmtKind::Var(ident, ty, expr, mutable) => {
+                let mutable = if *mutable { "" } else { "const " };
                 let (ctype, array) = self.generate_type(ty);
                 let value = self.generate_expr(expr, false);
                 format!(
-                    "const {ctype} {ident}{array}  = {value};",
+                    "{mutable}{ctype} {ident}{array} = {value};",
                     ident = ident.name
                 )
-            }
-            ast::StmtKind::Var(ident, ty, expr) => {
-                let (ctype, array) = self.generate_type(ty);
-                let value = self.generate_expr(expr, false);
-                format!("{ctype} {ident}{array} = {value};", ident = ident.name)
             }
             ast::StmtKind::Assign(op, ident, expr) => {
                 let op = op.as_ref().map(lang::BinaryOp::as_str).unwrap_or("");

@@ -132,10 +132,11 @@ where
             .map_with(|((ident, ty), expr), e| {
                 Spanned::new(
                     ast::Stmt {
-                        kind: ast::StmtKind::Let(
+                        kind: ast::StmtKind::Var(
                             ident,
                             ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
                             Box::new(expr),
+                            false,
                         ),
                     },
                     e.span(),
@@ -159,6 +160,7 @@ where
                             ident,
                             ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
                             Box::new(expr),
+                            true,
                         ),
                     },
                     e.span(),

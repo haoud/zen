@@ -120,7 +120,7 @@ impl<'src> SemanticAnalysis<'src> {
                         }
                     }
                 }
-                ast::StmtKind::Let(ident, ty, expr) | ast::StmtKind::Var(ident, ty, expr) => {
+                ast::StmtKind::Var(ident, ty, expr, _) => {
                     self.check_expr(expr, false);
 
                     // Verify that the variable is not declared with type void. If it is, emit an
@@ -439,11 +439,8 @@ impl<'src> SemanticAnalysis<'src> {
                     self.infer_expr(expr);
                 }
             }
-            ast::StmtKind::Let(ident, ty, expr) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, false);
-            }
-            ast::StmtKind::Var(ident, ty, expr) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, true);
+            ast::StmtKind::Var(ident, ty, expr, mutable) => {
+                self.infer_let_var(ident, expr, &mut ty.0, span, *mutable);
             }
             ast::StmtKind::Assign(_, _, expr) => {
                 self.infer_expr(expr);
