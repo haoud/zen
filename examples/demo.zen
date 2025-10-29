@@ -3,9 +3,7 @@ void array_as_param(a: int[5]) {
 }
 
 // A simple Zen program to test array.
-void main() {
-    let overflow: bool[99999999999999999999999999] = {};
-    
+void main() {   
     let explicit : bool[3] = {true, false, true};
     var inferred := {"Hello", "Zen", "World"};
 

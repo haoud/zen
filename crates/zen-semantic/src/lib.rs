@@ -35,6 +35,12 @@ impl<'src> SemanticAnalysis<'src> {
 
     /// Perform semantic analysis on the given list of functions.
     pub fn check_functions(&mut self, funcs: &mut [Spanned<ast::Function<'src>>]) {
+        // First, insert all function prototypes into the global scope to allow for
+        // forward references without errors.
+        for function in funcs.iter_mut() {
+            self.scopes.insert_function(&mut self.errors, function);
+        }
+
         for function in funcs.iter_mut() {
             let span = function.span();
 
@@ -46,7 +52,7 @@ impl<'src> SemanticAnalysis<'src> {
                 );
             }
 
-            self.scopes.insert_function(&mut self.errors, function);
+            // Insert function parameters into the current scope.
             self.scopes.enter_scope();
             for param in &function.prototype.params {
                 // Verify that function parameters are not declared with the void type.
@@ -55,6 +61,7 @@ impl<'src> SemanticAnalysis<'src> {
                         .emit_void_function_parameter_error(param.span(), &function.prototype);
                 }
 
+                // Insert the parameter into the current scope.
                 self.scopes.insert_variable(
                     &mut self.errors,
                     Spanned::new(
@@ -140,7 +147,6 @@ impl<'src> SemanticAnalysis<'src> {
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
                 }
-
                 ast::StmtKind::Assign(op, ident, expr) => {
                     self.check_expr(expr, false);
 
