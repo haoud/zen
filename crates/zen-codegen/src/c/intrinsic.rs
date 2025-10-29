@@ -9,10 +9,9 @@ impl Codegen {
     #[must_use]
     pub fn generate_fmt_args(&mut self, expr: &ast::Expr) -> String {
         match &expr.ty {
-            Type::Bool => format!(
-                "({}) ? \"true\" : \"false\"",
-                self.generate_expr(expr, false)
-            ),
+            // Special handling for array types to generate each element's formatting argument
+            // individually. This allow us to support directly passing array literals or identifiers
+            // to formatting functions.
             Type::Array(_, _) => match &expr.kind {
                 ast::ExprKind::List(items) => {
                     let elements = items
@@ -22,17 +21,47 @@ impl Codegen {
                         .join(", ");
                     format!("{}", elements)
                 }
-                ast::ExprKind::Identifier(_) => {
-                    // FIXME: WE NEED THE SYMBOL TABLE HERE TO GET THE TYPE OF THE IDENTIFIER
-                    /*let elements = (0..*size)
-                        .map(|i| ident.name.to_owned() + "[" + &i.to_string() + "]")
-                        .collect::<Vec<String>>()
-                        .join(", ");
-                    format!("{}", elements)*/
-                    todo!()
+                ast::ExprKind::Identifier(ident) => match &expr.ty {
+                    Type::Array(ty, size) => match **ty {
+                        Type::Bool => {
+                            let elements = (0..*size)
+                                .map(|i| {
+                                    format!(
+                                        "({}) ? \"true\" : \"false\"",
+                                        ident.name.to_owned() + "[" + &i.to_string() + "]"
+                                    )
+                                })
+                                .collect::<Vec<String>>()
+                                .join(", ");
+                            return format!("{}", elements);
+                        }
+                        Type::Infer | Type::Unknown | Type::Void => {
+                            // These types should not appear here, so we panic if they do.
+                            unreachable!();
+                        }
+                        _ => {
+                            let elements = (0..*size)
+                                .map(|i| ident.name.to_owned() + "[" + &i.to_string() + "]")
+                                .collect::<Vec<String>>()
+                                .join(", ");
+                            return format!("{}", elements);
+                        }
+                    },
+                    _ => self.generate_fmt_args(expr),
+                },
+                _ => {
+                    // Array types should only be formatted from array literals or identifiers.
+                    unreachable!()
                 }
-                _ => unreachable!(),
             },
+            // Special handling for boolean types to convert them to "true" or "false" strings
+            // before passing them to the formatting function.
+            Type::Bool => format!(
+                "({}) ? \"true\" : \"false\"",
+                self.generate_expr(expr, false)
+            ),
+            // For all other types, just generate the expression normally since they are natively
+            // supported by C's printf function.
             _ => self.generate_expr(expr, false),
         }
     }

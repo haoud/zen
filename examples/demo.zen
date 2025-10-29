@@ -12,7 +12,8 @@ void main() {
 
     array_as_param({1, 2, 3, 4, 5});
 
-    // Not implemented yet, need a refactoring of the code generator to support array literals
-    // @println("Inferred array: {}", inferred);
-    // @println("Explitcit array: {}", explicit);
+    @println("Inferred array: {}", inferred);
+    @println("Explitcit array: {}", explicit);
+
+    @println("{} {} {} {}", explicit, true, 3, "Testing arrays");
 }
