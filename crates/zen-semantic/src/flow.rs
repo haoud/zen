@@ -61,7 +61,7 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
         // If not all paths return a value, and the function is not void, emit an error. If the
         // function is void, it's acceptable for not all paths to have a return statement since
         // the function will implicitly return void.
-        if !return_all_paths && function.prototype.ret.0 != lang::Type::Void {
+        if !return_all_paths && function.prototype.ret.0 != lang::ty::Type::Void {
             self.errors
                 .emit_not_all_paths_return_value_error(&function.prototype, function.span());
         }

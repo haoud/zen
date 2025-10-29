@@ -337,20 +337,20 @@ impl Codegen {
     ///  - The Never type has no equivalent in C and should not be used in the
     ///    generated code, since it represents an value that can never be
     ///    constructed.
-    pub fn generate_type(&mut self, ty: &lang::Type) -> (String, String) {
+    pub fn generate_type(&mut self, ty: &lang::ty::Type) -> (String, String) {
         match ty {
-            lang::Type::Void => ("void".to_string(), "".to_string()),
-            lang::Type::Str => ("char *".to_string(), "".to_string()),
-            lang::Type::Bool => ("bool".to_string(), "".to_string()),
-            lang::Type::Int => ("int".to_string(), "".to_string()),
-            lang::Type::Array(ty, size) => {
+            lang::ty::Type::Void => ("void".to_string(), "".to_string()),
+            lang::ty::Type::Str => ("char *".to_string(), "".to_string()),
+            lang::ty::Type::Bool => ("bool".to_string(), "".to_string()),
+            lang::ty::Type::Int => ("int".to_string(), "".to_string()),
+            lang::ty::Type::Array(ty, size) => {
                 let ctype = self.generate_type(ty);
                 (ctype.0, format!("[{}]", size))
             }
-            lang::Type::Unknown => {
+            lang::ty::Type::Unknown => {
                 unreachable!("Type::Unknown should not appear in the code generation phase")
             }
-            lang::Type::Infer => {
+            lang::ty::Type::Infer => {
                 unreachable!("Type::Infer should not appear in the code generation phase")
             }
         }

@@ -100,7 +100,7 @@ where
                 Spanned::new(
                     ast::Block {
                         stmts: statements,
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -134,7 +134,7 @@ where
                     ast::Stmt {
                         kind: ast::StmtKind::Let(
                             ident,
-                            ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                            ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
                             Box::new(expr),
                         ),
                     },
@@ -157,7 +157,7 @@ where
                     ast::Stmt {
                         kind: ast::StmtKind::Var(
                             ident,
-                            ty.unwrap_or(Spanned::none(lang::Type::Infer)),
+                            ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
                             Box::new(expr),
                         ),
                     },
@@ -261,7 +261,7 @@ where
         let value = select! {
             lexer::Token::Number(val) = e => Spanned::new(
                 ast::Literal {
-                    ty: lang::Type::Int,
+                    ty: lang::ty::Type::Int,
                     value: val,
                 },
                 e.span()
@@ -274,7 +274,7 @@ where
             Spanned::new(
                 ast::Expr {
                     kind: ast::ExprKind::String(s),
-                    ty: lang::Type::Str,
+                    ty: lang::ty::Type::Str,
                 },
                 e.span(),
             )
@@ -286,7 +286,7 @@ where
             Spanned::new(
                 ast::Expr {
                     kind: ast::ExprKind::Identifier(ident),
-                    ty: lang::Type::Infer,
+                    ty: lang::ty::Type::Infer,
                 },
                 e.span(),
             )
@@ -311,7 +311,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::List(elements),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -330,7 +330,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::FunctionCall(Box::new(function), args),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -350,7 +350,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::IntrinsicCall(Box::new(function), args),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -365,7 +365,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Literal(lit),
-                        ty: lang::Type::Int,
+                        ty: lang::ty::Type::Int,
                     },
                     e.span(),
                 )
@@ -393,7 +393,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Unary(op, Box::new(rhs)),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -407,7 +407,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -421,7 +421,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                        ty: lang::Type::Infer,
+                        ty: lang::ty::Type::Infer,
                     },
                     e.span(),
                 )
@@ -437,7 +437,7 @@ where
                     Spanned::new(
                         ast::Expr {
                             kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::Type::Infer,
+                            ty: lang::ty::Type::Infer,
                         },
                         e.span(),
                     )
@@ -454,7 +454,7 @@ where
                     Spanned::new(
                         ast::Expr {
                             kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::Type::Infer,
+                            ty: lang::ty::Type::Infer,
                         },
                         e.span(),
                     )
@@ -471,7 +471,7 @@ where
                     Spanned::new(
                         ast::Expr {
                             kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::Type::Infer,
+                            ty: lang::ty::Type::Infer,
                         },
                         e.span(),
                     )
@@ -584,14 +584,14 @@ where
         lexer::Token::Keyword("true") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(true, e.span())),
-                ty: lang::Type::Bool,
+                ty: lang::ty::Type::Bool,
             },
             e.span()
         ),
         lexer::Token::Keyword("false") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(false, e.span())),
-                ty: lang::Type::Bool,
+                ty: lang::ty::Type::Bool,
             },
             e.span()
         ),
@@ -616,22 +616,22 @@ where
 /// `bool`, `int`, `str`, `void`, and array types like `<type>[<size>]`.
 #[must_use]
 pub fn type_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<lang::Type>, ParserError<'tokens, 'src>> + Clone
+-> impl Parser<'tokens, I, Spanned<lang::ty::Type>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     let ty = select! {
-        lexer::Token::Identifier("bool") = e => Spanned::new(lang::Type::Bool, e.span()),
-        lexer::Token::Identifier("int") = e => Spanned::new(lang::Type::Int, e.span()),
-        lexer::Token::Identifier("str") = e => Spanned::new(lang::Type::Str, e.span()),
-        lexer::Token::Identifier("void") = e => Spanned::new(lang::Type::Void, e.span()),
+        lexer::Token::Identifier("bool") = e => Spanned::new(lang::ty::Type::Bool, e.span()),
+        lexer::Token::Identifier("int") = e => Spanned::new(lang::ty::Type::Int, e.span()),
+        lexer::Token::Identifier("str") = e => Spanned::new(lang::ty::Type::Str, e.span()),
+        lexer::Token::Identifier("void") = e => Spanned::new(lang::ty::Type::Void, e.span()),
     };
 
     // Parse a number literal.
     let number = select! {
         lexer::Token::Number(val) = e => Spanned::new(
             ast::Literal {
-                ty: lang::Type::Int,
+                ty: lang::ty::Type::Int,
                 value: val,
             },
             e.span()
@@ -648,7 +648,7 @@ where
         .then_ignore(just(lexer::Token::Delimiter("]")))
         .map_with(|(ty, count), e| {
             Spanned::new(
-                lang::Type::Array(Box::new(ty.0), count.value.parse_u64().unwrap()),
+                lang::ty::Type::Array(Box::new(ty.0), count.value.parse_u64().unwrap()),
                 e.span(),
             )
         });

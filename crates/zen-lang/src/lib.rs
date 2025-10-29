@@ -4,6 +4,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+pub mod sym;
+pub mod ty;
+
 /// A simple span type that uses `usize` to represent the start and end of a span.
 pub type Span = chumsky::span::SimpleSpan<usize>;
 
@@ -75,69 +78,6 @@ impl<T: Debug> std::fmt::Debug for Spanned<T> {
             .field("span", &self.span())
             .field("item", &self.inner())
             .finish()
-    }
-}
-
-/// The types supported by the language.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
-    /// A type that represents an unknown type. This is primarily used to indicate
-    /// an error in type checking, where the type could not be determined. This type
-    /// should not appear in the final AST after type checking.
-    Unknown,
-
-    /// A special type that indicates the type is to be inferred during type checking. This is
-    /// primarily used for integer literals that do not have an explicit type annotation, or for
-    /// expressions where the type can be determined from context (e.g., the result of a binary
-    /// operation where both operands have the same type). When type inference is complete, all
-    /// instances of this type should be replaced with a concrete type, and any remaining instances
-    /// of this type indicate a failure to infer the type.
-    Infer,
-
-    /// An array type. The first element is the type of the elements in the array, and the second
-    /// element is the size of the array. All elements in the array must have the same type.
-    Array(Box<Type>, u64),
-
-    /// A string type. Currently, strings are represented as a sequence of characters and do not
-    /// have a fixed length. Future versions of the language may introduce more complex string
-    /// types, such as fixed-length strings or string slices.
-    Str,
-
-    /// A boolean type. Can be either true or false.
-    Bool,
-
-    /// An signed integer type.
-    Int,
-
-    /// Void type. It is only used to indicate that a function does not return a value.
-    Void,
-}
-
-impl Type {
-    /// Check if the type is a boolean type.
-    #[must_use]
-    pub fn is_boolean(&self) -> bool {
-        matches!(self, Type::Bool)
-    }
-
-    /// Check if the type is a valid type (i.e., not Unknown or Infer).
-    #[must_use]
-    pub fn is_valid(&self) -> bool {
-        !matches!(self, Type::Unknown | Type::Infer)
-    }
-}
-
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Array(ty, size) => write!(f, "{}[{}]", ty, size),
-            Type::Unknown => write!(f, "<unknown>"),
-            Type::Infer => write!(f, "<infer>"),
-            Type::Str => write!(f, "string"),
-            Type::Bool => write!(f, "bool"),
-            Type::Int => write!(f, "int"),
-            Type::Void => write!(f, "void"),
-        }
     }
 }
 

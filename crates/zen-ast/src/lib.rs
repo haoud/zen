@@ -1,4 +1,4 @@
-use lang::{self, BinaryOp, Span, Spanned, Type, UnaryOp};
+use lang::{self, BinaryOp, Span, Spanned, UnaryOp, ty::Type};
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,

@@ -1,4 +1,4 @@
-use lang::{Spanned, Type};
+use lang::{Spanned, ty::Type};
 
 use crate::c::Codegen;
 

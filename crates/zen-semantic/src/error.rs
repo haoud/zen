@@ -6,7 +6,7 @@
 use ariadne::{Color, ReportKind};
 use lang::Spanned;
 
-use crate::{SemanticError, symbol};
+use crate::SemanticError;
 
 /// The different kinds of semantic errors that can occur during semantic analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -113,6 +113,12 @@ pub enum SemanticErrorKind {
 
     // An array type is being declarared as an return type of a function.
     ArrayTypeAsFunctionReturnType = 33,
+
+    /// Invalid binary operation attempted for a given type.
+    InvalidBinaryOperationForType = 34,
+
+    /// Invalid unary operation attempted for a given type.
+    InvalidUnaryOperationForType = 35,
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -228,7 +234,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
         ret_span: lang::Span,
-        ret_type: &lang::Type,
+        ret_type: &lang::ty::Type,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, ret_span.into_range()))
@@ -345,7 +351,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_variable_redefinition_error(
         &mut self,
-        variable: &Spanned<symbol::Variable<'src>>,
+        variable: &Spanned<lang::sym::Variable<'src>>,
         previous_span: lang::Span,
     ) {
         let span = variable.span();
@@ -374,7 +380,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_variable_definition_type_mismatch_error(
         &mut self,
         expr: &Spanned<ast::Expr<'src>>,
-        ty: &Spanned<lang::Type>,
+        ty: &Spanned<lang::ty::Type>,
         stmt_span: lang::Span,
     ) {
         self.errors.push(
@@ -449,7 +455,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_mutation_of_immutable_variable_error(
         &mut self,
-        variable: &Spanned<symbol::Variable<'src>>,
+        variable: &Spanned<lang::sym::Variable<'src>>,
         stmt_span: lang::Span,
     ) {
         self.errors.push(
@@ -479,7 +485,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_type_mismatch_in_assignment_error(
         &mut self,
-        variable: &Spanned<symbol::Variable<'src>>,
+        variable: &Spanned<lang::sym::Variable<'src>>,
         expr: &Spanned<ast::Expr<'src>>,
         stmt_span: lang::Span,
     ) {
@@ -513,7 +519,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_bool_compound_assignment_error(
         &mut self,
-        variable: &Spanned<symbol::Variable<'src>>,
+        variable: &Spanned<lang::sym::Variable<'src>>,
         op: lang::BinaryOp,
         stmt_span: lang::Span,
     ) {
@@ -592,7 +598,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_argument_type_mismatch_error(
         &mut self,
-        param: &symbol::Variable<'src>,
+        param: &lang::sym::Variable<'src>,
         arg: &Spanned<ast::Expr<'src>>,
         param_span: lang::Span,
         call_span: lang::Span,
@@ -811,7 +817,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         fn_span: lang::Span,
         ret_span: lang::Span,
-        expr: &Spanned<ast::Expr<'src>>
+        expr: &Spanned<ast::Expr<'src>>,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, ret_span.into_range()))
@@ -859,11 +865,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when a variable of type void is declared.
     #[cold]
-    pub fn emit_void_variable_declaration_error(
-        &mut self,
-        var_span: lang::Span,
-        var_name: &str,
-    ) {
+    pub fn emit_void_variable_declaration_error(&mut self, var_span: lang::Span, var_name: &str) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, var_span.into_range()))
                 .with_code(SemanticErrorKind::VoidVariableDeclaration as u32)
@@ -872,7 +874,7 @@ impl<'src> SemanticDiagnostic<'src> {
                     var_name
                 ))
                 .with_label(
-                    ariadne::Label::new((self.filename, var_span.into_range())) 
+                    ariadne::Label::new((self.filename, var_span.into_range()))
                         .with_message(format!("variable '{}' declared as void here", var_name))
                         .with_color(Color::Red),
                 )
@@ -914,12 +916,14 @@ impl<'src> SemanticDiagnostic<'src> {
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
                 .with_code(SemanticErrorKind::UnknownIntrinsicFunction as u32)
                 .with_message(format!(
-                    "call to unknown intrinsic function '{}'", identifier.name
+                    "call to unknown intrinsic function '{}'",
+                    identifier.name
                 ))
                 .with_label(
                     ariadne::Label::new((self.filename, identifier.span().into_range()))
                         .with_message(format!(
-                            "intrinsic function '{}' does not exist", identifier.name
+                            "intrinsic function '{}' does not exist",
+                            identifier.name
                         ))
                         .with_color(Color::Red),
                 )
@@ -934,7 +938,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         identifier: &Spanned<ast::Identifier<'src>>,
         expr: &Spanned<ast::Expr<'src>>,
-        expected: lang::Type,
+        expected: lang::ty::Type,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, expr.span().into_range()))
@@ -951,7 +955,7 @@ impl<'src> SemanticDiagnostic<'src> {
                         .with_color(Color::Cyan),
                 )
                 .finish(),
-        ); 
+        );
     }
 
     /// Emit an error when there is an incorrect number of arguments provided to an intrinsic
@@ -1001,7 +1005,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_incompatible_types_in_initializer_list_error(
         &mut self,
         elem: &Spanned<ast::Expr<'src>>,
-        expected: &lang::Type,
+        expected: &lang::ty::Type,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, elem.span().into_range()))
@@ -1012,9 +1016,7 @@ impl<'src> SemanticDiagnostic<'src> {
                 ))
                 .with_label(
                     ariadne::Label::new((self.filename, elem.span().into_range()))
-                        .with_message(format!(
-                            "This element is of type '{}'", elem.ty
-                        ))
+                        .with_message(format!("This element is of type '{}'", elem.ty))
                         .with_color(Color::Cyan),
                 )
                 .finish(),
@@ -1038,11 +1040,66 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, fn_span.into_range()))
                         .with_message(format!(
-                            "function '{}' declared with array return type here", proto.ident.name
+                            "function '{}' declared with array return type here",
+                            proto.ident.name
                         ))
                         .with_color(Color::Red),
                 )
                 .finish(),
         );
     }
+
+    /// Emit an error when an invalid binary operation is attempted for a given type.
+    #[cold]
+    pub fn emit_invalid_binary_operation_for_type_error(
+        &mut self,
+        op: lang::BinaryOp,
+        lhs: &Spanned<ast::Expr<'src>>,
+        rhs: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::InvalidBinaryOperationForType as u32)
+                .with_message(format!(
+                    "binary operation '{op}' is not valid for operand types: left is '{}', right is '{}'",
+                    lhs.ty, rhs.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, lhs.span().into_range()))
+                        .with_message(format!("Left operand is of type '{}'", lhs.ty))
+                        .with_color(Color::Cyan),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, rhs.span().into_range()))
+                        .with_message(format!("Right operand is of type '{}'", rhs.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an invalid unary operation is attempted for a given type.
+    #[cold]
+    pub fn emit_invalid_unary_operation_for_type_error(
+        &mut self,
+        op: lang::UnaryOp,
+        expr: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::InvalidUnaryOperationForType as u32)
+                .with_message(format!(
+                    "unary operation '{op}' is not valid for operand type '{}'", expr.ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!("Operand is of type '{}'", expr.ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
 }
+
