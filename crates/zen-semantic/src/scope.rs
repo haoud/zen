@@ -185,8 +185,8 @@ impl<'src> Scope<'src> {
         errors: &mut SemanticDiagnostic<'src>,
         variable: Spanned<lang::sym::Variable<'src>>,
     ) {
-        if let Some(variable) = self.get_variable(variable.name) {
-            errors.emit_variable_redefinition_error(variable, variable.span());
+        if let Some(original) = self.get_variable(variable.name) {
+            errors.emit_variable_redefinition_error(original, &variable);
         } else {
             self.current_scope_mut()
                 .symbols_mut()

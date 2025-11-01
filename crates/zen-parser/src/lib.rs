@@ -53,26 +53,21 @@ where
             just(lexer::Token::Delimiter("(")),
             just(lexer::Token::Delimiter(")")),
         ))
-        .then(stmt_parser().repeated().collect().delimited_by(
-            just(lexer::Token::Delimiter("{")),
-            just(lexer::Token::Delimiter("}")),
-        ))
-        .map_with(|(((ty, name), params), body), e| {
+        .map_with(|((ty, name), params), e| {
             Spanned::new(
-                ast::Function {
-                    prototype: Spanned::new(
-                        ast::FunctionPrototype {
-                            ident: name,
-                            ret: ty,
-                            params,
-                        },
-                        e.span(),
-                    ),
-                    body,
+                ast::FunctionPrototype {
+                    ident: name,
+                    ret: ty,
+                    params,
                 },
                 e.span(),
             )
         })
+        .then(stmt_parser().repeated().collect().delimited_by(
+            just(lexer::Token::Delimiter("{")),
+            just(lexer::Token::Delimiter("}")),
+        ))
+        .map_with(|(prototype, body), e| Spanned::new(ast::Function { prototype, body }, e.span()))
 }
 
 /// A parser for statements in the language. Currently, the only statement that is supported

@@ -115,8 +115,11 @@ impl<'src> SemanticAnalysis<'src> {
 
                         // Verify that the return expression type matches the function's return type.
                         if expr.ty != proto.ret.0 && expr.ty.is_valid() {
-                            self.errors
-                                .emit_return_type_mismatch_error(&proto, stmt_span, &expr.ty);
+                            self.errors.emit_return_type_mismatch_error(
+                                &proto,
+                                expr.span(),
+                                &expr.ty,
+                            );
                         }
                     } else {
                         // Verify that the function's return type is void if no expression
@@ -181,7 +184,7 @@ impl<'src> SemanticAnalysis<'src> {
                             }
                         }
                     } else {
-                        self.errors.emit_undefined_variable_error(ident);
+                        self.errors.emit_undefined_identifier_error(ident);
                     }
                 }
                 ast::StmtKind::If(cond, then, or) => {
@@ -593,7 +596,7 @@ impl<'src> SemanticAnalysis<'src> {
                 if let Some(var) = self.scopes.get_variable(identifier.name) {
                     expr.ty = var.ty.clone();
                 } else {
-                    self.errors.emit_undefined_variable_error(identifier);
+                    self.errors.emit_undefined_identifier_error(identifier);
                     expr.ty = lang::ty::Type::Unknown;
                 }
             }

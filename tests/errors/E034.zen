@@ -1,0 +1,4 @@
+bool main() {
+    let message := "Hello, " + "World !";
+    return 1 && 2;
+}

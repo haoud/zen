@@ -1,0 +1,7 @@
+str[3] hello() {
+    return {"Hello", ",", "world"};
+}
+
+void main() {
+    let msg := hello();
+}
