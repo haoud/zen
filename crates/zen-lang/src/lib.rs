@@ -1,6 +1,7 @@
 use std::{
     fmt::Debug,
     hash::Hash,
+    num::{IntErrorKind, ParseIntError},
     ops::{Deref, DerefMut},
 };
 
@@ -122,24 +123,6 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    /// Check if the binary operator can accept boolean operands. This includes the equality,
-    /// inequality, logical AND, and logical OR operators. Other operators, such as arithmetic
-    /// and comparison operators, do not accept boolean operands.
-    #[must_use]
-    pub fn accept_boolean_operands(&self) -> bool {
-        matches!(
-            self,
-            BinaryOp::Eq | BinaryOp::Neq | BinaryOp::And | BinaryOp::Or
-        )
-    }
-
-    /// Check if the binary operator requires boolean operands. This includes the logical
-    /// AND and logical OR operators.
-    #[must_use]
-    pub fn requires_boolean_operands(&self) -> bool {
-        matches!(self, BinaryOp::And | BinaryOp::Or)
-    }
-
     /// Check if the binary operator is a comparison operator. This includes the equality,
     /// inequality, less than, less than or equal to, greater than, and greater than
     /// or equal to operators.
@@ -262,16 +245,16 @@ impl<'src> Literal<'src> {
     /// only used to properly handle the edge case of the minimum value of a signed integer
     /// (i.e., `-9223372036854775808`), which cannot be represented as a positive integer and needs
     /// a special case.
-    pub fn parse_i64(&self, negated: bool) -> Result<i64, ()> {
-        let num = self.parse_u64().map_err(|_| ())?;
+    pub fn parse_i64(&self, negated: bool) -> Result<i64, LiteralParseError> {
+        let num = self.parse_u64()?;
         if negated {
             if num > (i64::MAX as u64) + 1 {
-                Err(())
+                Err(LiteralParseError::NegativeOverflow)
             } else {
                 Ok(!(num as i64))
             }
         } else if num > i64::MAX as u64 {
-            Err(())
+            Err(LiteralParseError::PositiveOverflow)
         } else {
             Ok(num as i64)
         }
@@ -281,6 +264,39 @@ impl<'src> Literal<'src> {
 impl core::fmt::Display for Literal<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}{}", self.base.as_prefix(), self.literal)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LiteralParseError {
+    /// The parsed string was empty.
+    Empty,
+
+    /// The parsed string contained an invalid digit for the given base, or if the string
+    /// contained a non-ASCII character.
+    InvalidDigit,
+
+    /// The parsed integer was too large to fit in the target type.
+    PositiveOverflow,
+
+    /// The parsed integer was too small to fit in the target type.
+    NegativeOverflow,
+
+    /// The parsed integer was zero, which is not allowed for non-zero types.
+    Zero,
+}
+
+impl From<ParseIntError> for LiteralParseError {
+    fn from(err: ParseIntError) -> Self {
+        match err.kind() {
+            IntErrorKind::Empty => Self::Empty,
+            IntErrorKind::InvalidDigit => Self::InvalidDigit,
+            IntErrorKind::PosOverflow => Self::PositiveOverflow,
+            IntErrorKind::NegOverflow => Self::NegativeOverflow,
+            IntErrorKind::Zero => Self::Zero,
+            _ => unimplemented!(),
+        }
     }
 }
 

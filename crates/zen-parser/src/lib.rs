@@ -493,10 +493,21 @@ where
         .then(
             atoms::number_parser().validate(|count, e, emitter| match count.value.parse_u64() {
                 Ok(num) => num,
-                Err(_) => {
+                Err(err) => {
+                    let kind = match err.kind() {
+                        std::num::IntErrorKind::Empty => "is empty".to_string(),
+                        std::num::IntErrorKind::InvalidDigit => {
+                            "contains invalid digits".to_string()
+                        }
+                        std::num::IntErrorKind::PosOverflow => "is too large".to_string(),
+                        std::num::IntErrorKind::NegOverflow => "is negative".to_string(),
+                        std::num::IntErrorKind::Zero => "cannot be zero".to_string(),
+                        _ => "is invalid".to_string(),
+                    };
+
                     emitter.emit(Rich::custom(
                         e.span(),
-                        format!("Invalid array size: {} (at {})", count.value, e.span()),
+                        format!("Invalid array size: {} {}", count.value.as_str(), kind),
                     ));
                     // Return a default value to continue parsing. The AST is now poisoned with
                     // invalid data, but the program will not continue past the parsing phase since
