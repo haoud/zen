@@ -258,6 +258,12 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
 
+                // If either side has an invalid type, skip further checks for this binary
+                // operation since it is already erroneous.
+                if !lhs.ty.is_valid() || !rhs.ty.is_valid() {
+                    return;
+                }
+
                 // Get the type metadata for the left-hand side type to check if it supports
                 // the given binary operation. Since both sides should have the same type, we only
                 // need to check one side.
@@ -281,6 +287,12 @@ impl<'src> SemanticAnalysis<'src> {
                     self.check_expr(rhs, !negated);
                 } else {
                     self.check_expr(rhs, negated);
+                }
+
+                // If the inner expression has an invalid type, skip further checks for this
+                // unary operation since it is already erroneous.
+                if !rhs.ty.is_valid() {
+                    return;
                 }
 
                 // Get the type metadata for the right-hand side type to check if it supports
@@ -559,14 +571,14 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
+                self.infer_expr(rhs);
                 match op {
                     lang::UnaryOp::Neg => {
                         // Recursively infer the type of the inner expression if needed.
-                        self.infer_expr(rhs);
                         expr.ty = rhs.ty.clone();
                     }
                     lang::UnaryOp::Not => {
-                        // The logical NOT operator always yields a boolean result.
+                        // Logical NOT operator always yields a boolean result.
                         expr.ty = lang::ty::Type::Bool;
                     }
                 }
