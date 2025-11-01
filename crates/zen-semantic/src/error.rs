@@ -777,12 +777,13 @@ impl<'src> SemanticDiagnostic<'src> {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, elem.span().into_range()))
                 .with_code(SemanticErrorKind::IncompatibleTypesInInitializerList as u32)
-                .with_message(format!(
-                    "incompatible type in initializer list",
-                ))
+                .with_message(format!("incompatible type in initializer list",))
                 .with_label(
                     ariadne::Label::new((self.filename, elem.span().into_range()))
-                        .with_message(format!("This element is of type '{}', expected '{}'", elem.ty, expected))
+                        .with_message(format!(
+                            "This element is of type '{}', expected '{}'",
+                            elem.ty, expected
+                        ))
                         .with_color(Color::Cyan),
                 )
                 .finish(),

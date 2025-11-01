@@ -11,6 +11,9 @@
 use chumsky::prelude::*;
 use lang::{Literal, LiteralBase, Span, Spanned};
 
+#[cfg(test)]
+pub mod tests;
+
 /// A token is a single unit of the input string that represents a single entity in the language.
 /// For example, an identifier, a keyword, an operator...
 ///
