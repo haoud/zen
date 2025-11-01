@@ -184,7 +184,6 @@ impl Codegen {
                     "return;".to_string()
                 }
             }
-
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
                 let mutable = if *mutable { "" } else { "const " };
                 let TypeInfo { ctype, postfix } = self.generate_type(ty);
