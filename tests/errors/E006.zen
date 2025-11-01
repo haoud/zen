@@ -1,3 +1,0 @@
-int main() {
-    return true + true;        /// Error 006: Boolean values cannot be used in arithmetic operations
-}

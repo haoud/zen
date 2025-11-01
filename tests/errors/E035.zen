@@ -1,0 +1,4 @@
+bool main() {
+    let wrong := -true;
+    return !"Hello";
+}

@@ -1,10 +1,9 @@
 use crate::error::SemanticDiagnostic;
-use lang::{self, Spanned};
+use lang::{self, Spanned, ty::TypeTable};
 
 pub mod error;
 pub mod flow;
 pub mod scope;
-pub mod symbol;
 
 pub type SemanticNote<'src> = ariadne::Report<'src, (&'src str, std::ops::Range<usize>)>;
 pub type SemanticWarning<'src> = ariadne::Report<'src, (&'src str, std::ops::Range<usize>)>;
@@ -18,6 +17,9 @@ pub struct SemanticAnalysis<'src> {
 
     /// A collection of semantic errors encountered during analysis.
     errors: SemanticDiagnostic<'src>,
+
+    /// A table of types metadata used during semantic analysis.
+    types: TypeTable,
 }
 
 impl<'src> SemanticAnalysis<'src> {
@@ -27,35 +29,43 @@ impl<'src> SemanticAnalysis<'src> {
         Self {
             errors: SemanticDiagnostic::new(filename),
             scopes: scope::Scope::new(),
+            types: TypeTable::new(),
         }
     }
 
     /// Perform semantic analysis on the given list of functions.
     pub fn check_functions(&mut self, funcs: &mut [Spanned<ast::Function<'src>>]) {
+        // First, insert all function prototypes into the global scope to allow for
+        // forward references without errors.
+        for function in funcs.iter_mut() {
+            self.scopes.insert_function(&mut self.errors, function);
+        }
+
         for function in funcs.iter_mut() {
             let span = function.span();
 
             // Verify that array types are not used as function parameter types.
-            if let lang::Type::Array(_, _) = function.prototype.ret.0 {
+            if let lang::ty::Type::Array(_, _) = function.prototype.ret.0 {
                 self.errors.emit_array_type_as_function_return_type_error(
                     function.prototype.ret.span(),
                     &function.prototype,
                 );
             }
 
-            self.scopes.insert_function(&mut self.errors, function);
+            // Insert function parameters into the current scope.
             self.scopes.enter_scope();
             for param in &function.prototype.params {
                 // Verify that function parameters are not declared with the void type.
-                if param.ty.0 == lang::Type::Void {
+                if param.ty.0 == lang::ty::Type::Void {
                     self.errors
                         .emit_void_function_parameter_error(param.span(), &function.prototype);
                 }
 
+                // Insert the parameter into the current scope.
                 self.scopes.insert_variable(
                     &mut self.errors,
                     Spanned::new(
-                        symbol::Variable {
+                        lang::sym::Variable {
                             mutable: param.mutable,
                             name: param.ident.name,
                             ty: param.ty.0.clone(),
@@ -94,7 +104,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                         // If the function's return type is void, emitting an error since a value
                         // is being returned. Skip further checks for this return statement.
-                        if proto.ret.0 == lang::Type::Void {
+                        if proto.ret.0 == lang::ty::Type::Void {
                             self.errors.emit_return_value_from_void_function_error(
                                 proto.span(),
                                 stmt_span,
@@ -105,25 +115,28 @@ impl<'src> SemanticAnalysis<'src> {
 
                         // Verify that the return expression type matches the function's return type.
                         if expr.ty != proto.ret.0 && expr.ty.is_valid() {
-                            self.errors
-                                .emit_return_type_mismatch_error(&proto, stmt_span, &expr.ty);
+                            self.errors.emit_return_type_mismatch_error(
+                                &proto,
+                                expr.span(),
+                                &expr.ty,
+                            );
                         }
                     } else {
                         // Verify that the function's return type is void if no expression
                         // is returned.
-                        if proto.ret.0 != lang::Type::Void {
+                        if proto.ret.0 != lang::ty::Type::Void {
                             self.errors
                                 .emit_missing_return_expression_error(&proto, stmt_span);
                         }
                     }
                 }
-                ast::StmtKind::Let(ident, ty, expr) | ast::StmtKind::Var(ident, ty, expr) => {
+                ast::StmtKind::Var(ident, ty, expr, _) => {
                     self.check_expr(expr, false);
 
                     // Verify that the variable is not declared with type void. If it is, emit an
                     // error and skip further checks for this variable declaration since it is
                     // invalid.
-                    if ty.0 == lang::Type::Void {
+                    if ty.0 == lang::ty::Type::Void {
                         self.errors
                             .emit_void_variable_declaration_error(stmt_span, ident.name);
                         continue;
@@ -137,7 +150,6 @@ impl<'src> SemanticAnalysis<'src> {
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
                 }
-
                 ast::StmtKind::Assign(op, ident, expr) => {
                     self.check_expr(expr, false);
 
@@ -155,15 +167,24 @@ impl<'src> SemanticAnalysis<'src> {
                                 .emit_type_mismatch_in_assignment_error(var, expr, span);
                         }
 
-                        // Ensure that compound assignments are not used on boolean variables.
+                        // Ensure that the type support the given operation if it's a compound
+                        // assignment.
                         if let Some(op) = op {
-                            if var.ty.is_boolean() {
-                                self.errors
-                                    .emit_bool_compound_assignment_error(var, *op, span);
+                            self.types.try_auto_add_type(&var.ty);
+                            let ty_metadata = self
+                                .types
+                                .get_type_metadata(&var.ty)
+                                .expect("Type metadata should always exist");
+                            if !ty_metadata.support_binary_op(*op) {
+                                self.errors.emit_invalid_binary_operation_for_type_error(
+                                    *op,
+                                    &expr.ty,
+                                    expr.span(),
+                                );
                             }
                         }
                     } else {
-                        self.errors.emit_undefined_variable_error(ident);
+                        self.errors.emit_undefined_identifier_error(ident);
                     }
                 }
                 ast::StmtKind::If(cond, then, or) => {
@@ -222,7 +243,6 @@ impl<'src> SemanticAnalysis<'src> {
         self.infer_expr(expr);
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
-                let has_boolean_operand = lhs.ty.is_boolean() || rhs.ty.is_boolean();
                 self.check_expr(lhs, false);
                 self.check_expr(rhs, false);
 
@@ -238,63 +258,55 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
 
-                // Ensure that boolean values are not used in arithmetic operations.
-                if has_boolean_operand && !op.accept_boolean_operands() {
-                    self.errors
-                        .emit_boolean_arithmetic_error(*op, lhs, rhs, span);
+                // If either side has an invalid type, skip further checks for this binary
+                // operation since it is already erroneous.
+                if !lhs.ty.is_valid() || !rhs.ty.is_valid() {
+                    return;
                 }
 
-                // Ensure that logical operators are only used with boolean operands.
-                if !has_boolean_operand && op.requires_boolean_operands() {
-                    self.errors
-                        .emit_logical_operator_with_non_boolean_error(*op, lhs, rhs, span);
-                }
+                // Get the type metadata for the left-hand side type to check if it supports
+                // the given binary operation. Since both sides should have the same type, we only
+                // need to check one side.
+                self.types.try_auto_add_type(&lhs.ty);
+                let ty_metadata = self
+                    .types
+                    .get_type_metadata(&lhs.ty)
+                    .expect("Type metadata should always exist");
 
-                // Disallow binary operations involving string types for now.
-                if lhs.ty == lang::Type::Str || rhs.ty == lang::Type::Str {
+                // If the operation is not supported by the type, emit an error.
+                if !ty_metadata.support_binary_op(*op) {
                     self.errors
-                        .emit_invalid_string_binary_operation_error(*op, lhs, rhs, span);
+                        .emit_invalid_binary_operation_for_type_error(*op, &lhs.ty, span);
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
-                match op {
-                    lang::UnaryOp::Neg => {
-                        // Recursively check the inner expression, passing along whether we are in
-                        // a negated context or not. This is needed to correctly handle cases like
-                        // double negation and to ensure proper overflow/underflow checks.
-                        if *op == lang::UnaryOp::Neg {
-                            self.check_expr(rhs, !negated);
-                        } else {
-                            self.check_expr(rhs, negated);
-                        }
+                // Recursively check the inner expression, passing along whether we are in
+                // a negated context or not. This is needed to correctly handle cases like
+                // double negation and to ensure proper overflow/underflow checks.
+                if *op == lang::UnaryOp::Neg {
+                    self.check_expr(rhs, !negated);
+                } else {
+                    self.check_expr(rhs, negated);
+                }
 
-                        // Disallow negation of boolean types.
-                        if *op == lang::UnaryOp::Neg && rhs.ty.is_boolean() {
-                            self.errors.emit_negation_of_non_numeric_type_error(rhs);
-                        }
+                // If the inner expression has an invalid type, skip further checks for this
+                // unary operation since it is already erroneous.
+                if !rhs.ty.is_valid() {
+                    return;
+                }
 
-                        // Disallow negation of string types.
-                        if rhs.ty == lang::Type::Str {
-                            self.errors
-                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
-                        }
-                    }
-                    lang::UnaryOp::Not => {
-                        // Verify that the operand of the logical NOT operator is a boolean. This
-                        // avoids nonsensical expressions like `!42` or `!x` where `x` is an
-                        // integer. This is allowed in C-like languages, but not in Zen since it
-                        // has a strong type system.
-                        self.check_expr(rhs, false);
-                        if !rhs.ty.is_boolean() {
-                            self.errors.emit_logical_not_with_non_boolean_error(rhs);
-                        }
+                // Get the type metadata for the right-hand side type to check if it supports
+                // the given unary operation.
+                self.types.try_auto_add_type(&rhs.ty);
+                let ty_metadata = self
+                    .types
+                    .get_type_metadata(&rhs.ty)
+                    .expect("Type metadata should always exist");
 
-                        // Disallow logical NOT on string types.
-                        if rhs.ty == lang::Type::Str {
-                            self.errors
-                                .emit_invalid_string_unary_operation_error(*op, rhs, span);
-                        }
-                    }
+                // If the operation is not supported by the type, emit an error.
+                if !ty_metadata.support_unary_op(*op) {
+                    self.errors
+                        .emit_invalid_unary_operation_for_type_error(*op, &rhs.ty, span);
                 }
             }
             ast::ExprKind::FunctionCall(ident, args) => {
@@ -354,7 +366,7 @@ impl<'src> SemanticAnalysis<'src> {
                             self.errors.emit_intrinsic_argument_type_mismatch_error(
                                 ident,
                                 &args[0],
-                                lang::Type::Str,
+                                lang::ty::Type::Str,
                             );
                             return;
                         };
@@ -385,24 +397,24 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::Literal(x) => {
                 // Ensure that integer literals fit within the bounds of the integer type.
                 match x.ty {
-                    lang::Type::Int => {
+                    lang::ty::Type::Int => {
                         if x.value.parse_i64(negated).is_err() {
                             self.errors.emit_literal_overflow_error(x);
                         }
                     }
-                    lang::Type::Void => {
+                    lang::ty::Type::Void => {
                         unreachable!("Void literals should not exist in the AST")
                     }
-                    lang::Type::Str => {
+                    lang::ty::Type::Str => {
                         unreachable!("String literals should always have type String after parsing")
                     }
-                    lang::Type::Bool => {
+                    lang::ty::Type::Bool => {
                         unreachable!("Boolean literals should always have type Bool after parsing")
                     }
-                    lang::Type::Array(_, _) => {
+                    lang::ty::Type::Array(_, _) => {
                         unreachable!("Array literals should be represented as List expressions")
                     }
-                    lang::Type::Infer | lang::Type::Unknown => {
+                    lang::ty::Type::Infer | lang::ty::Type::Unknown => {
                         unreachable!("Literal types should be inferred during type inference")
                     }
                 }
@@ -448,11 +460,8 @@ impl<'src> SemanticAnalysis<'src> {
                     self.infer_expr(expr);
                 }
             }
-            ast::StmtKind::Let(ident, ty, expr) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, false);
-            }
-            ast::StmtKind::Var(ident, ty, expr) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, true);
+            ast::StmtKind::Var(ident, ty, expr, mutable) => {
+                self.infer_let_var(ident, expr, &mut ty.0, span, *mutable);
             }
             ast::StmtKind::Assign(_, _, expr) => {
                 self.infer_expr(expr);
@@ -489,12 +498,12 @@ impl<'src> SemanticAnalysis<'src> {
         &mut self,
         ident: &ast::Identifier<'src>,
         expr: &mut Spanned<ast::Expr<'src>>,
-        ty: &mut lang::Type,
+        ty: &mut lang::ty::Type,
         span: lang::Span,
         mutable: bool,
     ) {
         // Infer the type of the expression if it is not already known.
-        if *ty == lang::Type::Infer {
+        if *ty == lang::ty::Type::Infer {
             self.infer_expr(expr);
             *ty = expr.ty.clone();
         }
@@ -504,7 +513,7 @@ impl<'src> SemanticAnalysis<'src> {
         self.scopes.insert_variable(
             &mut self.errors,
             Spanned::new(
-                symbol::Variable {
+                lang::sym::Variable {
                     name: ident.name,
                     ty: ty.clone(),
                     mutable,
@@ -522,7 +531,7 @@ impl<'src> SemanticAnalysis<'src> {
     /// should have been determined during parsing (e.g., string or boolean literals).
     fn infer_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
         // The expression's type is already known, so no inference is needed.
-        if expr.ty != lang::Type::Infer {
+        if expr.ty != lang::ty::Type::Infer {
             return;
         }
 
@@ -542,7 +551,7 @@ impl<'src> SemanticAnalysis<'src> {
                     | lang::BinaryOp::Gt
                     | lang::BinaryOp::Gte => {
                         // Logical and comparison operators always yield a boolean result.
-                        expr.ty = lang::Type::Bool;
+                        expr.ty = lang::ty::Type::Bool;
                     }
 
                     lang::BinaryOp::Add
@@ -553,24 +562,24 @@ impl<'src> SemanticAnalysis<'src> {
                         // to that. However, if either side is still `Infer` or doesn't match,
                         // we set the type to `Unknown` to indicate a type inference failure.
                         // TODO: Implement proper type coercion rules here.
-                        if lhs.ty == rhs.ty && lhs.ty != lang::Type::Infer {
+                        if lhs.ty == rhs.ty && lhs.ty != lang::ty::Type::Infer {
                             expr.ty = lhs.ty.clone();
                         } else {
-                            expr.ty = lang::Type::Unknown;
+                            expr.ty = lang::ty::Type::Unknown;
                         }
                     }
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
+                self.infer_expr(rhs);
                 match op {
                     lang::UnaryOp::Neg => {
                         // Recursively infer the type of the inner expression if needed.
-                        self.infer_expr(rhs);
                         expr.ty = rhs.ty.clone();
                     }
                     lang::UnaryOp::Not => {
-                        // The logical NOT operator always yields a boolean result.
-                        expr.ty = lang::Type::Bool;
+                        // Logical NOT operator always yields a boolean result.
+                        expr.ty = lang::ty::Type::Bool;
                     }
                 }
             }
@@ -586,7 +595,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // If the function is not found, we set the expression's type to `Unknown`
                     // but we do not emit an error here, as the function call will be checked
                     // later in the `check_expr` method that will handle the error reporting.
-                    expr.ty = lang::Type::Unknown;
+                    expr.ty = lang::ty::Type::Unknown;
                 }
             }
             ast::ExprKind::Identifier(identifier) => {
@@ -599,8 +608,8 @@ impl<'src> SemanticAnalysis<'src> {
                 if let Some(var) = self.scopes.get_variable(identifier.name) {
                     expr.ty = var.ty.clone();
                 } else {
-                    self.errors.emit_undefined_variable_error(identifier);
-                    expr.ty = lang::Type::Unknown;
+                    self.errors.emit_undefined_identifier_error(identifier);
+                    expr.ty = lang::ty::Type::Unknown;
                 }
             }
             ast::ExprKind::IntrinsicCall(ident, args) => {
@@ -613,9 +622,9 @@ impl<'src> SemanticAnalysis<'src> {
                     // Set the types for known intrinsic functions. If an intrinsic is not listed
                     // here, we default to `Unknown` type.
                     "println" | "print" => {
-                        expr.ty = lang::Type::Void;
+                        expr.ty = lang::ty::Type::Void;
                     }
-                    _ => expr.ty = lang::Type::Unknown,
+                    _ => expr.ty = lang::ty::Type::Unknown,
                 }
             }
             ast::ExprKind::List(items) => {
@@ -628,9 +637,10 @@ impl<'src> SemanticAnalysis<'src> {
                 // set it to `Unknown` to indicate a type inference failure.
                 if let Some(first) = items.first() {
                     if items.iter().all(|item| item.ty == first.ty) {
-                        expr.ty = lang::Type::Array(Box::new(first.ty.clone()), items.len() as u64);
+                        expr.ty =
+                            lang::ty::Type::Array(Box::new(first.ty.clone()), items.len() as u64);
                     } else {
-                        expr.ty = lang::Type::Unknown;
+                        expr.ty = lang::ty::Type::Unknown;
                     }
                 } else {
                     todo!("Implement empty list type inference");

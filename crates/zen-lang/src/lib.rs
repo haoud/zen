@@ -1,8 +1,12 @@
 use std::{
     fmt::Debug,
     hash::Hash,
+    num::{IntErrorKind, ParseIntError},
     ops::{Deref, DerefMut},
 };
+
+pub mod sym;
+pub mod ty;
 
 /// A simple span type that uses `usize` to represent the start and end of a span.
 pub type Span = chumsky::span::SimpleSpan<usize>;
@@ -78,69 +82,6 @@ impl<T: Debug> std::fmt::Debug for Spanned<T> {
     }
 }
 
-/// The types supported by the language.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
-    /// A type that represents an unknown type. This is primarily used to indicate
-    /// an error in type checking, where the type could not be determined. This type
-    /// should not appear in the final AST after type checking.
-    Unknown,
-
-    /// A special type that indicates the type is to be inferred during type checking. This is
-    /// primarily used for integer literals that do not have an explicit type annotation, or for
-    /// expressions where the type can be determined from context (e.g., the result of a binary
-    /// operation where both operands have the same type). When type inference is complete, all
-    /// instances of this type should be replaced with a concrete type, and any remaining instances
-    /// of this type indicate a failure to infer the type.
-    Infer,
-
-    /// An array type. The first element is the type of the elements in the array, and the second
-    /// element is the size of the array. All elements in the array must have the same type.
-    Array(Box<Type>, u64),
-
-    /// A string type. Currently, strings are represented as a sequence of characters and do not
-    /// have a fixed length. Future versions of the language may introduce more complex string
-    /// types, such as fixed-length strings or string slices.
-    Str,
-
-    /// A boolean type. Can be either true or false.
-    Bool,
-
-    /// An signed integer type.
-    Int,
-
-    /// Void type. It is only used to indicate that a function does not return a value.
-    Void,
-}
-
-impl Type {
-    /// Check if the type is a boolean type.
-    #[must_use]
-    pub fn is_boolean(&self) -> bool {
-        matches!(self, Type::Bool)
-    }
-
-    /// Check if the type is a valid type (i.e., not Unknown or Infer).
-    #[must_use]
-    pub fn is_valid(&self) -> bool {
-        !matches!(self, Type::Unknown | Type::Infer)
-    }
-}
-
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Array(ty, size) => write!(f, "{}[{}]", ty, size),
-            Type::Unknown => write!(f, "<unknown>"),
-            Type::Infer => write!(f, "<infer>"),
-            Type::Str => write!(f, "string"),
-            Type::Bool => write!(f, "bool"),
-            Type::Int => write!(f, "int"),
-            Type::Void => write!(f, "void"),
-        }
-    }
-}
-
 /// The different binary operators supported by the language.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
@@ -182,24 +123,6 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    /// Check if the binary operator can accept boolean operands. This includes the equality,
-    /// inequality, logical AND, and logical OR operators. Other operators, such as arithmetic
-    /// and comparison operators, do not accept boolean operands.
-    #[must_use]
-    pub fn accept_boolean_operands(&self) -> bool {
-        matches!(
-            self,
-            BinaryOp::Eq | BinaryOp::Neq | BinaryOp::And | BinaryOp::Or
-        )
-    }
-
-    /// Check if the binary operator requires boolean operands. This includes the logical
-    /// AND and logical OR operators.
-    #[must_use]
-    pub fn requires_boolean_operands(&self) -> bool {
-        matches!(self, BinaryOp::And | BinaryOp::Or)
-    }
-
     /// Check if the binary operator is a comparison operator. This includes the equality,
     /// inequality, less than, less than or equal to, greater than, and greater than
     /// or equal to operators.
@@ -322,16 +245,16 @@ impl<'src> Literal<'src> {
     /// only used to properly handle the edge case of the minimum value of a signed integer
     /// (i.e., `-9223372036854775808`), which cannot be represented as a positive integer and needs
     /// a special case.
-    pub fn parse_i64(&self, negated: bool) -> Result<i64, ()> {
-        let num = self.parse_u64().map_err(|_| ())?;
+    pub fn parse_i64(&self, negated: bool) -> Result<i64, LiteralParseError> {
+        let num = self.parse_u64()?;
         if negated {
             if num > (i64::MAX as u64) + 1 {
-                Err(())
+                Err(LiteralParseError::NegativeOverflow)
             } else {
                 Ok(!(num as i64))
             }
         } else if num > i64::MAX as u64 {
-            Err(())
+            Err(LiteralParseError::PositiveOverflow)
         } else {
             Ok(num as i64)
         }
@@ -341,6 +264,39 @@ impl<'src> Literal<'src> {
 impl core::fmt::Display for Literal<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}{}", self.base.as_prefix(), self.literal)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LiteralParseError {
+    /// The parsed string was empty.
+    Empty,
+
+    /// The parsed string contained an invalid digit for the given base, or if the string
+    /// contained a non-ASCII character.
+    InvalidDigit,
+
+    /// The parsed integer was too large to fit in the target type.
+    PositiveOverflow,
+
+    /// The parsed integer was too small to fit in the target type.
+    NegativeOverflow,
+
+    /// The parsed integer was zero, which is not allowed for non-zero types.
+    Zero,
+}
+
+impl From<ParseIntError> for LiteralParseError {
+    fn from(err: ParseIntError) -> Self {
+        match err.kind() {
+            IntErrorKind::Empty => Self::Empty,
+            IntErrorKind::InvalidDigit => Self::InvalidDigit,
+            IntErrorKind::PosOverflow => Self::PositiveOverflow,
+            IntErrorKind::NegOverflow => Self::NegativeOverflow,
+            IntErrorKind::Zero => Self::Zero,
+            _ => unimplemented!(),
+        }
     }
 }
 

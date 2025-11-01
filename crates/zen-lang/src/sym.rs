@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::lang::{self, Spanned};
+use crate::{Spanned, ty::Type};
 
 /// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -9,7 +9,7 @@ pub struct Variable<'src> {
     pub name: &'src str,
 
     /// The type of the variable.
-    pub ty: lang::Type,
+    pub ty: Type,
 
     /// Whether the variable is mutable or not.
     pub mutable: bool,
@@ -26,7 +26,7 @@ pub struct Function<'src> {
     pub params: Vec<Spanned<Variable<'src>>>,
 
     /// The return type of the function.
-    pub ret: lang::Type,
+    pub ret: Type,
 }
 
 /// A symbol table containing variables and functions. It supports insertion and lookup of symbols,

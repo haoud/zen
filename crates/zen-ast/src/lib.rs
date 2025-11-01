@@ -1,4 +1,4 @@
-use lang::{self, BinaryOp, Span, Spanned, Type, UnaryOp};
+use lang::{self, BinaryOp, Span, Spanned, UnaryOp, ty::Type};
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,
@@ -96,23 +96,15 @@ pub enum StmtKind<'src> {
     /// type is considered to be `void`.
     Return(Box<Option<Spanned<Expr<'src>>>>),
 
-    /// A let statement. The first element is the identifier being bound, the second
-    /// element is the optional type annotation, and the third element is the expression
-    /// being assigned to the identifier.
-    Let(
-        Spanned<Identifier<'src>>,
-        Spanned<Type>,
-        Box<Spanned<Expr<'src>>>,
-    ),
-
     // A var statement. The first element is the identifier being bound, the second
-    // element is the optional type annotation, and the third element is the expression
-    // being assigned to the identifier. This is similar to a let statement, but the
-    // variable can be mutated after it is declared, unlike a let statement.
+    // element is the optional type annotation, the third element is the expression
+    // being assigned to the identifier and the fourth element indicates whether the variable
+    // is mutable or not.
     Var(
         Spanned<Identifier<'src>>,
         Spanned<Type>,
         Box<Spanned<Expr<'src>>>,
+        bool,
     ),
 
     /// An assignment statement. The first element is an optional binary operator (for

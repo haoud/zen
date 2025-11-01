@@ -1,3 +1,0 @@
-int main() {
-    return -bool;   // E011: Negation of non-numeric type
-}

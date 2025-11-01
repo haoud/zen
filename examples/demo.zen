@@ -1,18 +1,4 @@
-void array_as_param(a: int[5]) {
-    // Do something with the array
-}
-
-// A simple Zen program to test array.
-void main() {
-    let explicit : bool[3] = {true, false, true};
-    var inferred := {"Hello", "Zen", "World"};
-
-    @println("Initializer list #1: {}", {true, false, true});
-    @println("Initializer list #2: {}", {"Hello", "Zen", "World"});
-
-    array_as_param({1, 2, 3, 4, 5});
-
-    // Not implemented yet, need a refactoring of the code generator to support array literals
-    // @println("Inferred array: {}", inferred);
-    // @println("Explitcit array: {}", explicit);
+// A simple Zen program
+int main(argc: int) {
+    return 0;
 }
