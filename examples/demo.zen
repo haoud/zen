@@ -6,6 +6,7 @@ void array_as_param(a: int[5]) {
 void main() {   
     let explicit : bool[3] = {true, false, true};
     var inferred := {"Hello", "Zen", "World"};
+    return bool;
 
     @println("Initializer list #1: {}", {true, false, true});
     @println("Initializer list #2: {}", {"Hello", "Zen", "World"});

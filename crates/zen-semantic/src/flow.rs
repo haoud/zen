@@ -24,15 +24,17 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
         function: &Spanned<ast::Function<'src>>,
     ) {
         let mut return_all_paths = false;
+        let mut unreachable_code_error_reported = false;
         let mut return_span: Option<chumsky::span::SimpleSpan> = None;
 
         for stmt in stmts.iter() {
             // If we have already determined that all paths return, any subsequent
             // statements are unreachable. We report an error and we skip further
             // analysis of this statement list.
-            if return_all_paths {
+            if return_all_paths && !unreachable_code_error_reported {
                 self.errors
                     .emit_unreachable_code_error(return_span.unwrap(), stmt.span());
+                unreachable_code_error_reported = true;
                 continue;
             }
 
