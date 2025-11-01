@@ -17,7 +17,7 @@ pub enum Type {
     /// A boolean type. Can be either true or false.
     Bool,
 
-    /// An signed integer type.
+    /// A signed integer type.
     Int,
 
     /// Void type. It is only used to indicate that a function does not return a value.
