@@ -1,4 +1,4 @@
 // A simple Zen program
-void main(a: int[999999999999999999999999999999999]) {   
-    
+int main(argc: int) {
+    return 0;
 }

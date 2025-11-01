@@ -30,7 +30,7 @@ pub enum SemanticErrorKind {
     BinaryOpTypeMismatch = 5,
 
     /// Attempted to perform arithmetic on boolean values (like who does that ?).
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidBinaryOperationForType' instead")]
     BooleanArithmetic = 6,
 
     /// Use of an undefined variable.
@@ -46,7 +46,7 @@ pub enum SemanticErrorKind {
     LiteralOverflow = 10,
 
     /// The negation operator '-' is applied to a non-numeric type.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidUnaryOperationForType' instead")]
     NegationOfNonNumericType = 11,
 
     /// Attempted to mutate an immutable variable (declared with `let` instead of `var`).
@@ -56,7 +56,7 @@ pub enum SemanticErrorKind {
     TypeMismatchInAssignment = 13,
 
     /// Attempted to use a compound assignment (like `+=`, `-=`, etc.) on a boolean variable.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidBinaryOperationForType' instead")]
     BoolCompoundAssignment = 14,
 
     /// Call to an undefined function.
@@ -71,11 +71,11 @@ pub enum SemanticErrorKind {
     ArgumentTypeMismatch = 17,
 
     /// Using logical operators (`and`, `or`) with non-boolean operands.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidBinaryOperationForType' instead")]
     LogicalOperatorWithNonBoolean = 18,
 
     /// Using the logical not operator (`not`) with a non-boolean operand.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidUnaryOperationForType' instead")]
     LogicalNotWithNonBoolean = 19,
 
     /// Using comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) with incompatible types.
@@ -88,11 +88,11 @@ pub enum SemanticErrorKind {
     NotAllPathsReturnValue = 22,
 
     /// Invalid binary operation attempted on string literals.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidBinaryOperationForType' instead")]
     InvalidStringBinaryOperation = 23,
 
     /// Invalid unary operation attempted on string literals.
-    #[deprecated]
+    #[deprecated(note = "Use 'InvalidUnaryOperationForType' instead")]
     InvalidStringUnaryOperation = 24,
 
     /// Attempted to return a value from a void function.
