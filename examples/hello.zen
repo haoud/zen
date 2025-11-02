@@ -1,0 +1,10 @@
+int main(argc: int, argv: str[2]) {
+    if (argc >= 2) {
+        //@println("Hello, {} !", argv[0]);
+        @println("Hello, {} !", argv);
+    } else {
+        @println("Hello, world !");
+    }
+
+    return 0;
+}

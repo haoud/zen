@@ -1,0 +1,22 @@
+/// This function calculates the factorial of a number using a while loop
+/// instead of recursion to avoid stack overflow for large numbers.
+int factorial(num: int) {
+    if (num < 0) {
+        return 0;
+    }
+
+    var acc := 1;
+    var n := num;
+    while (n > 0) {
+        acc *= n;
+        n -= 1;
+    }
+    return acc;
+}
+
+int main() {
+    let number := 10;
+    let result := factorial(number);
+    @println("Factorial of {} is {}", number, result);
+    return 0;
+}
