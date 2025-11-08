@@ -127,21 +127,23 @@ fn translate(args: &clap::ArgMatches) {
         return;
     }
 
-    let mut functions = ast.unwrap();
+    let mut program = ast.unwrap();
     let mut semantic_analyzer = semantic::SemanticAnalysis::new(path);
-    let semantic_time = trace_time(|| semantic_analyzer.check_functions(&mut functions)).0;
+    let semantic_time = trace_time(|| semantic_analyzer.check_program(&mut program)).0;
 
     // If there were semantic analysis errors, print them and exit early.
-    if let Err(errors) = semantic_analyzer.finalize() {
-        for e in errors {
-            e.eprint((path.as_str(), &source)).unwrap();
+    let types = match semantic_analyzer.finalize() {
+        Ok(types) => types,
+        Err(errors) => {
+            for e in errors {
+                e.eprint((path.as_str(), &source)).unwrap();
+            }
+            return;
         }
-        return;
-    }
+    };
 
     // Generate C code from the AST and print it if the flag 'dump-ir' flag is set.
-    let code = codegen::c::generate(&functions);
-    let codegen_time = trace_time(|| codegen::c::generate(&functions)).0;
+    let (codegen_time, code) = trace_time(|| codegen::c::generate(&program, types));
     std::fs::write(output, &code).expect("Failed to write to output file");
     if args.get_flag("dump-ir") {
         println!("Generated C code:");

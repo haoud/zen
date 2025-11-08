@@ -80,15 +80,13 @@ impl core::fmt::Display for Token<'_> {
 /// This function should never panic in theory. However, panic actually can happen if there is
 /// the lexer cannot parse an number literal due to an invalid format. For example, `0xGHI`
 /// is not a valid hexadecimal number, so the lexer will panic when it tries to parse it.
-/// FIXME: Change this function to not panic on invalid number literals.
 #[must_use]
 pub fn lexer<'a>()
 -> impl Parser<'a, &'a str, Vec<Spanned<Token<'a>>>, extra::Err<Rich<'a, char, Span>>> {
     // A lexer for parsing C-style identifiers and keywords.
     let ident = text::ascii::ident().map(|ident| match ident {
-        "return" | "true" | "false" | "let" | "var" | "mut" | "if" | "else" | "while" => {
-            Token::Keyword(ident)
-        }
+        "return" | "true" | "false" | "let" | "var" | "mut" | "if" | "else" | "while"
+        | "struct" => Token::Keyword(ident),
         _ => Token::Identifier(ident),
     });
 
@@ -163,6 +161,7 @@ pub fn lexer<'a>()
             just(":"),
             just(";"),
             just(","),
+            just("."),
         )),
     ))
     .to_slice()

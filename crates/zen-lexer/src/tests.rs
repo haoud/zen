@@ -9,7 +9,7 @@ use lang::{Literal, LiteralBase};
 
 #[test]
 pub fn lex_keywords() {
-    let input = "return true false let var mut if else while";
+    let input = "return true false let var mut if else while struct";
     let expected = vec![
         Token::Keyword("return"),
         Token::Keyword("true"),
@@ -20,6 +20,7 @@ pub fn lex_keywords() {
         Token::Keyword("if"),
         Token::Keyword("else"),
         Token::Keyword("while"),
+        Token::Keyword("struct"),
     ];
     let result = lexer()
         .parse(input)
@@ -96,7 +97,7 @@ pub fn lex_operators() {
 
 #[test]
 pub fn lex_delimiters() {
-    let input = "( ) [ ] { } , : ; :: ..";
+    let input = "( ) [ ] { } . , : ; :: ..";
     let expected = vec![
         Token::Delimiter("("),
         Token::Delimiter(")"),
@@ -104,6 +105,7 @@ pub fn lex_delimiters() {
         Token::Delimiter("]"),
         Token::Delimiter("{"),
         Token::Delimiter("}"),
+        Token::Delimiter("."),
         Token::Delimiter(","),
         Token::Delimiter(":"),
         Token::Delimiter(";"),

@@ -4,6 +4,7 @@
 //! duplicating code and without having big error handling code in the semantic analyzer
 //! code itself.
 use ariadne::{Color, ReportKind};
+use ast::StructField;
 use lang::Spanned;
 
 use crate::SemanticError;
@@ -52,7 +53,7 @@ pub enum SemanticErrorKind {
     /// Attempted to mutate an immutable variable (declared with `let` instead of `var`).
     MutationOfImmutableVariable = 12,
 
-    /// Type mismatch in assignment (the type of the expression does not match the variable's type).
+    /// Type mismatch in assignment (the type of the expression does not match the lvalue's type).
     TypeMismatchInAssignment = 13,
 
     /// Attempted to use a compound assignment (like `+=`, `-=`, etc.) on a boolean variable.
@@ -127,6 +128,37 @@ pub enum SemanticErrorKind {
 
     /// Invalid unary operation attempted for a given type.
     InvalidUnaryOperationForType = 35,
+
+    /// Invalid assignment to a non-variable expression (like a literal or a function call).
+    InvalidAssignmentLValue = 36,
+
+    /// Call to an unknown field on an object
+    UnknownFieldAccess = 37,
+
+    /// Redefinition of a struct type with the same name.
+    StructRedefinition = 38,
+
+    /// Attempted to declare a struct field of type void.
+    VoidFieldDeclaration = 39,
+
+    /// Use of an unknown type in a type annotation or declaration.
+    UnknownType = 40,
+
+    /// Redeclaration of a struct field within the same struct.
+    StructFieldRedeclaration = 41,
+
+    /// Recursive struct definitions leading to infinite size types.
+    InfiniteStructSize = 42,
+
+    /// Attempted to use a member access expression that is not an lvalue on the left-hand side of
+    /// an assignment.
+    MemberAccessExpressionIsNotAnLValueInAssignment = 43,
+}
+
+impl From<SemanticErrorKind> for u32 {
+    fn from(kind: SemanticErrorKind) -> Self {
+        kind as u32
+    }
 }
 
 /// A collection of semantic errors that can be emitted during semantic analysis.
@@ -391,30 +423,29 @@ impl<'src> SemanticDiagnostic<'src> {
         );
     }
 
-    /// Emit an error when the type of the expression assigned to a variable does not match
-    /// the variable's type.
+    /// Emit an error when the type of the expression assigned to a lvalue does not match
+    /// the lvalue's type.
     #[cold]
     pub fn emit_type_mismatch_in_assignment_error(
         &mut self,
-        variable: &Spanned<lang::sym::Variable<'src>>,
-        expr: &Spanned<ast::Expr<'src>>,
+        lvalue_ty: &lang::ty::Type,
+        lvalue_span: lang::Span,
+        expr_ty: &lang::ty::Type,
+        expr_span: lang::Span,
         stmt_span: lang::Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
                 .with_code(SemanticErrorKind::TypeMismatchInAssignment as u32)
-                .with_message(format!(
-                    "type mismatch in assignment to variable '{}'",
-                    variable.name,
-                ))
+                .with_message(format!("type mismatch in assignment",))
                 .with_label(
-                    ariadne::Label::new((self.filename, variable.span().into_range()))
-                        .with_message(format!("This variable expects type '{}'", variable.ty,))
+                    ariadne::Label::new((self.filename, lvalue_span.into_range()))
+                        .with_message(format!("This expects type '{}'", lvalue_ty))
                         .with_color(Color::Cyan),
                 )
                 .with_label(
-                    ariadne::Label::new((self.filename, expr.span().into_range()))
-                        .with_message(format!("This expression has type '{}'", expr.ty))
+                    ariadne::Label::new((self.filename, expr_span.into_range()))
+                        .with_message(format!("This expression has type '{}'", expr_ty))
                         .with_color(Color::Red),
                 )
                 .finish(),
@@ -858,6 +889,209 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_label(
                     ariadne::Label::new((self.filename, span.into_range()))
                         .with_message(format!("Operand is of type '{}'", ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an invalid left-hand side is used in an assignment. An left-hand side
+    /// must have an assignable type (like a variable) and cannot be a literal or a function call.
+    #[cold]
+    pub fn emit_invalid_assignment_lvalue_error(
+        &mut self,
+        lvalue: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::InvalidAssignmentLValue as u32)
+                .with_message(format!("invalid lvalue in assignment"))
+                .with_label(
+                    ariadne::Label::new((self.filename, lvalue.span().into_range()))
+                        .with_message(format!(
+                            "This expression of type '{}' cannot be assigned to",
+                            lvalue.ty
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when accessing an unknown field on an object.
+    #[cold]
+    pub fn emit_unknown_field_access_error(
+        &mut self,
+        field_name: &Spanned<ast::Identifier<'src>>,
+        ty: &lang::ty::Type,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::UnknownFieldAccess as u32)
+                .with_message(format!(
+                    "field '{}' does not exist on type '{}'",
+                    field_name.name, ty
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, field_name.span().into_range()))
+                        .with_message(format!(
+                            "Unknown field '{}' on type '{}'",
+                            field_name.name, ty
+                        ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a struct type is redefined with the same name
+    #[cold]
+    pub fn emit_struct_redefinition_error(
+        &mut self,
+        name: &str,
+        current: lang::Span,
+        previous: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, current.into_range()))
+                .with_code(SemanticErrorKind::StructRedefinition as u32)
+                .with_message(format!("redefinition of struct '{}'", name))
+                .with_label(
+                    ariadne::Label::new((self.filename, current.into_range()))
+                        .with_message(format!("struct '{}' redefined here", name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, previous.into_range()))
+                        .with_message("previous declaration here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a struct field is declared with type void.
+    #[cold]
+    pub fn emit_void_field_declaration_error(&mut self, var_span: lang::Span, field: &StructField) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, var_span.into_range()))
+                .with_code(SemanticErrorKind::VoidFieldDeclaration as u32)
+                .with_message(format!(
+                    "cannot declare field '{}' as void",
+                    field.ident.name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, var_span.into_range()))
+                        .with_message(format!(
+                            "field '{}' declared as void here",
+                            field.ident.name
+                        ))
+                        .with_color(Color::Red),
+                )
+                .with_note("The void type can only be used as a function return type.")
+                .finish(),
+        );
+    }
+
+    /// Emit an error when an unknown type is used in a type annotation or declaration.
+    #[cold]
+    pub fn emit_unknown_type_error(&mut self, ty_span: lang::Span, ty: &lang::ty::Type) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, ty_span.into_range()))
+                .with_code(SemanticErrorKind::UnknownType as u32)
+                .with_message(format!("unknown type '{}'", ty))
+                .with_label(
+                    ariadne::Label::new((self.filename, ty_span.into_range()))
+                        .with_message(format!("'{}' is not defined in this scope", ty))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when duplicate field names are found in a struct definition.
+    #[cold]
+    pub fn emit_struct_field_redeclaration_error(
+        &mut self,
+        field_name: &str,
+        current: lang::Span,
+        previous: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, current.into_range()))
+                .with_code(SemanticErrorKind::StructFieldRedeclaration as u32)
+                .with_message(format!(
+                    "duplicate field name '{}' in struct definition",
+                    field_name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, current.into_range()))
+                        .with_message(format!("field '{}' redeclared here", field_name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, previous.into_range()))
+                        .with_message("previous declaration here")
+                        .with_color(Color::Cyan),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a struct definition is recursive, leading to infinite size types.
+    #[cold]
+    pub fn emit_infinite_struct_size_error(
+        &mut self,
+        struct_name: &str,
+        struct_name_span: lang::Span,
+        field_span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, field_span.into_range()))
+                .with_code(SemanticErrorKind::InfiniteStructSize as u32)
+                .with_message(format!(
+                    "type '{}' has infinite size due to recursive definition",
+                    struct_name
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, struct_name_span.into_range()))
+                        .with_message(format!("struct '{}' is defined here", struct_name))
+                        .with_color(Color::Red),
+                )
+                .with_label(
+                    ariadne::Label::new((self.filename, field_span.into_range()))
+                        .with_message(format!("recursion without indirection"))
+                        .with_color(Color::Red),
+                )
+                // TODO: Add note about using pointers or references to break recursion
+                .finish(),
+        );
+    }
+
+    /// Emit an error when a member access expression is not an lvalue on the left-hand side
+    /// of an assignment.
+    #[cold]
+    pub fn emit_member_access_expression_is_not_an_lvalue_error(
+        &mut self,
+        expr: &Spanned<ast::Expr<'src>>,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(
+                    SemanticErrorKind::MemberAccessExpressionIsNotAnLValueInAssignment as u32,
+                )
+                .with_message(format!(
+                    "member access expression is not an lvalue and cannot be assigned to",
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, expr.span().into_range()))
+                        .with_message(format!(
+                            "This expression of type '{}' cannot be assigned to",
+                            expr.ty
+                        ))
                         .with_color(Color::Red),
                 )
                 .finish(),

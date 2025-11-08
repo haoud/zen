@@ -2,7 +2,7 @@ use lang::{Spanned, ty::Type};
 
 use crate::c::Codegen;
 
-impl Codegen {
+impl Codegen<'_> {
     /// Generates the expression to be used as an argument in a formatting function. This allows
     /// for special handling of certain types, such as booleans, which need to be converted to
     /// strings before being passed to the formatting function in order to have a nice output.
@@ -110,6 +110,10 @@ pub fn get_fmt_specifier(ty: &Type) -> String {
                     .collect::<Vec<String>>()
                     .join(", ")
             )
+        }
+        Type::Struct(name) => {
+            // TODO: Display struct fields properly and not just the struct name
+            format!("struct {} {{ <todo> }}", name)
         }
         Type::Unknown | Type::Infer | Type::Void => unreachable!(),
     }

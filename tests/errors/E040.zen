@@ -1,0 +1,4 @@
+struct duplicate {
+    a: int,
+    a: int,
+}

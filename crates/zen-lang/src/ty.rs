@@ -9,6 +9,10 @@ pub enum Type {
     /// element is the size of the array. All elements in the array must have the same type.
     Array(Box<Type>, u64),
 
+    /// A struct type. Currently, structs are identified by their name only, and field types are
+    /// stored in the `TypeMetadata` associated with the struct type.
+    Struct(String),
+
     /// A string type. Currently, strings are represented as a sequence of characters and do not
     /// have a fixed length. Future versions of the language may introduce more complex string
     /// types, such as fixed-length strings or string slices.
@@ -49,12 +53,33 @@ impl Type {
     pub fn is_valid(&self) -> bool {
         !matches!(self, Type::Unknown | Type::Infer)
     }
+
+    /// Check if the type is a built-in type or derived from built-in types. Built-in types are
+    /// `Int`, `Bool`, `Str`... Array types derived from built-in types are also considered
+    /// built-in types.
+    #[must_use]
+    pub fn is_builtin(&self) -> bool {
+        !self.is_user_defined()
+    }
+
+    /// Check if the type is user-defined or not. User-defined types are struct, enum, and similar
+    /// types. Array of those types are also considered user-defined, but array of built-in types
+    /// are not.
+    #[must_use]
+    pub fn is_user_defined(&self) -> bool {
+        match self {
+            Type::Array(ty, _) => ty.is_user_defined(),
+            Type::Struct(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Array(ty, size) => write!(f, "{}[{}]", ty, size),
+            Type::Struct(name) => write!(f, "struct {}", name),
             Type::Unknown => write!(f, "<unknown>"),
             Type::Infer => write!(f, "<infer>"),
             Type::Str => write!(f, "string"),
@@ -65,24 +90,71 @@ impl std::fmt::Display for Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Metadata about a type
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeMetadata {
-    /// The minimum alignment of the type in bytes.
-    pub align: u32,
-
-    /// The size of the type in bytes. In the case of unsized types (e.g. a string type), this value
-    /// will be the size of the metadata required to represent the type (e.g., a pointer and a
-    /// length for a string type).
-    pub size: u32,
-
     /// A list of unary operations supported by the type.
     pub unary_op: Vec<UnaryOp>,
 
     /// A list of binary operations supported by the type.
     pub binary_op: Vec<BinaryOp>,
+
+    /// A map of field names to their types for struct types.
+    pub fields: HashMap<String, Type>,
 }
 
 impl TypeMetadata {
+    #[must_use]
+    /// Create an empty type metadata.
+    pub fn empty() -> Self {
+        Self {
+            unary_op: vec![],
+            binary_op: vec![],
+            fields: HashMap::new(),
+        }
+    }
+
+    /// Create the type metadata for the built-in boolean type.
+    #[must_use]
+    pub fn bool() -> Self {
+        Self {
+            unary_op: vec![UnaryOp::Not],
+            binary_op: vec![BinaryOp::And, BinaryOp::Or, BinaryOp::Eq, BinaryOp::Neq],
+            fields: HashMap::new(),
+        }
+    }
+
+    /// Create the type metadata for the built-in integer type.
+    #[must_use]
+    pub fn int() -> Self {
+        Self {
+            unary_op: vec![UnaryOp::Neg],
+            binary_op: vec![
+                BinaryOp::Add,
+                BinaryOp::Sub,
+                BinaryOp::Mul,
+                BinaryOp::Div,
+                BinaryOp::Eq,
+                BinaryOp::Neq,
+                BinaryOp::Lt,
+                BinaryOp::Lte,
+                BinaryOp::Gt,
+                BinaryOp::Gte,
+            ],
+            fields: HashMap::new(),
+        }
+    }
+
+    /// Create the type metadata for the built-in string type.
+    #[must_use]
+    pub fn str() -> Self {
+        Self {
+            unary_op: vec![],
+            binary_op: vec![],
+            fields: HashMap::new(),
+        }
+    }
+
     /// Build the type metadata for a given type.
     ///
     /// # Panics
@@ -92,14 +164,11 @@ impl TypeMetadata {
     pub fn build(ty: &Type) -> Self {
         match ty {
             Type::Bool => Self {
-                align: 1,
-                size: 1,
                 unary_op: vec![UnaryOp::Not],
                 binary_op: vec![BinaryOp::And, BinaryOp::Or, BinaryOp::Eq, BinaryOp::Neq],
+                fields: HashMap::new(),
             },
             Type::Int => Self {
-                align: 8,
-                size: 8,
                 unary_op: vec![UnaryOp::Neg],
                 binary_op: vec![
                     BinaryOp::Add,
@@ -113,24 +182,29 @@ impl TypeMetadata {
                     BinaryOp::Gt,
                     BinaryOp::Gte,
                 ],
+                fields: HashMap::new(),
             },
             Type::Str => Self {
-                align: 8,
-                size: 16,
                 binary_op: vec![],
                 unary_op: vec![],
+                fields: HashMap::new(),
             },
-            Type::Array(ty, length) => {
-                let metadata = TypeMetadata::build(ty);
-                let size = metadata.size * (*length as u32);
-                Self {
-                    align: metadata.align,
-                    size,
-                    binary_op: vec![],
-                    unary_op: vec![],
-                }
-            }
-            Type::Void | Type::Unknown | Type::Infer => {
+            Type::Array(_, _) => Self {
+                binary_op: vec![],
+                unary_op: vec![],
+                fields: HashMap::new(),
+            },
+            Type::Struct(_) => Self {
+                binary_op: vec![],
+                unary_op: vec![],
+                fields: HashMap::new(),
+            },
+            Type::Void => Self {
+                binary_op: vec![],
+                unary_op: vec![],
+                fields: HashMap::new(),
+            },
+            Type::Unknown | Type::Infer => {
                 panic!("TypeMetadata cannot be built for void, unknown, or infer types")
             }
         }
@@ -147,6 +221,18 @@ impl TypeMetadata {
     pub fn support_unary_op(&self, op: UnaryOp) -> bool {
         self.unary_op.contains(&op)
     }
+
+    /// Check if the type has a field with the given name.
+    #[must_use]
+    pub fn has_field(&self, name: &str) -> bool {
+        self.fields.contains_key(name)
+    }
+
+    /// Get the type of a field with the given name.
+    #[must_use]
+    pub fn get_field_type(&self, name: &str) -> Option<&Type> {
+        self.fields.get(name)
+    }
 }
 
 /// A table of types used in the program. This stores information about all the types defined
@@ -160,9 +246,15 @@ pub struct TypeTable {
 impl TypeTable {
     /// Create a new, empty type table.
     pub fn new() -> Self {
-        Self {
+        let mut table = Self {
             types: HashMap::new(),
-        }
+        };
+
+        table.add_type(Type::Void, TypeMetadata::empty());
+        table.add_type(Type::Bool, TypeMetadata::bool());
+        table.add_type(Type::Int, TypeMetadata::int());
+        table.add_type(Type::Str, TypeMetadata::str());
+        table
     }
 
     /// Check if a type exists in the type table.
@@ -186,30 +278,12 @@ impl TypeTable {
         self.types.insert(ty, metadata);
     }
 
-    /// Add a new type to the type table if it does not already exist. If the type already
-    /// exists, this function does nothing.
-    ///
-    /// This is useful for types that are built-in in the language, but cannot be added beforehand
-    /// in the type table. For example, array types. Since there are potentially huge number of
-    /// array type combinations (element type + size), it is not feasible to add all of them
-    /// beforehand. Instead, we add them on-demand when they are first encountered during type
-    /// checking.
-    ///
-    /// # Returns
-    /// Returns `true` if the type was added, `false` if it already existed.
-    pub fn try_add_type(&mut self, ty: Type, metadata: TypeMetadata) -> bool {
-        if !self.type_exists(&ty) {
-            self.types.insert(ty, metadata);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Add a new type to the type table if it does not already exist, using the built-in metadata
-    /// generation function. If the type already exists, this function does nothing.
-    pub fn try_auto_add_type(&mut self, ty: &Type) {
-        if !self.type_exists(&ty) {
+    /// Add a new type to the type table if it does not already exist, is a valid type and is
+    /// not a built-in type. This is useful for automatically adding types that has no definition
+    /// in the program but are still a built-in type or derived from built-in types, such as arrays
+    /// of integers, booleans...
+    pub fn try_add_builtin_type(&mut self, ty: &Type) {
+        if !self.type_exists(&ty) && ty.is_builtin() && ty.is_valid() {
             let metadata = TypeMetadata::build(&ty);
             self.types.insert(ty.clone(), metadata);
         }

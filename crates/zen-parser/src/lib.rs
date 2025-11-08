@@ -1,3 +1,4 @@
+use ast::TopLevelItemKind;
 use chumsky::{input::ValueInput, prelude::*};
 use lang::{Span, Spanned};
 
@@ -7,17 +8,64 @@ pub mod atoms;
 /// is very useful to make the function signatures of the parsers less verbose...
 type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, lexer::Token<'src>, Span>>;
 
-/// A parser for an entire source file in the language. Currently, a source file only
-/// consists of a list of function definitions, but more top-level constructs can be
-/// added in the future, like global variable declarations, struct definitions, enum
-/// definitions...
+/// A parser for an entire source file in the language. A source file consists of a list of
+/// top-level items that can be interleaved in any order.
 #[must_use]
 pub fn file_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Vec<Spanned<ast::Function<'src>>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, Vec<Spanned<ast::TopLevelItem<'src>>>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
-    func_parser().repeated().collect()
+    choice((
+        func_parser().map(|sp| TopLevelItemKind::Function(sp)),
+        struct_parser().map(|sp| TopLevelItemKind::Struct(sp)),
+    ))
+    .map_with(|item, e| Spanned::new(ast::TopLevelItem { kind: item }, e.span()))
+    .repeated()
+    .collect()
+}
+
+/// A parser for function definitions in the language. A function definition consists of a return
+/// type, a name, a list of parameters (currently empty since parameters are not yet supported) and
+/// a body (a list of statements).
+#[must_use]
+pub fn struct_parser<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, Spanned<ast::Struct<'src>>, ParserError<'tokens, 'src>>
+where
+    I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
+{
+    // A parser for struct fields, which are of the form `<ident> : <type>`.
+    let field = atoms::identifier_parser()
+        .then_ignore(just(lexer::Token::Delimiter(":")))
+        .then(type_parser())
+        .map_with(|(name, ty), e| Spanned::new(ast::StructField { ident: name, ty }, e.span()));
+
+    // A parser for a list of fields, which are field definitions separated by commas and
+    // enclosed in curly braces. We allow a trailing comma after the last field for convenience.
+    let fields = field
+        .separated_by(just(lexer::Token::Delimiter(",")))
+        .allow_trailing()
+        .collect()
+        .delimited_by(
+            just(lexer::Token::Delimiter("{")),
+            just(lexer::Token::Delimiter("}")),
+        );
+
+    // The main struct parser, which combines the struct declaration which are of the form
+    // `struct <ident> { <fields> }`.
+    just(lexer::Token::Keyword("struct"))
+        .ignore_then(atoms::identifier_parser())
+        .then(fields)
+        .map_with(|(name, fields), e| {
+            Spanned::new(
+                ast::Struct {
+                    ident: name,
+                    fields,
+                },
+                e.span(),
+            )
+        })
+        .boxed()
 }
 
 /// A parser for function definitions in the language. A function definition consists of a return
@@ -164,9 +212,9 @@ where
                 )
             });
 
-        // Parse an assignment statement, which is of the form `<ident> [op] = <expr>;`, where
+        // Parse an assignment statement, which is of the form `<expr> [op] = <expr>;`, where
         // `op` is an optional binary operator for compound assignments like `+=`, `-=`...
-        let assign_op_expr = atoms::identifier_parser()
+        let assign_op_expr = expr_parser()
             .then(atoms::product_ops().or(atoms::sum_ops()).or_not())
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
@@ -374,10 +422,34 @@ where
         // operators have the same precedence, they will be parsed based on their associativity,
         // which is left-to-right for all binary operators in this language.
 
+        // The dot operator for field access has the highest precedence. It has the form
+        // `<expr>.<ident>`, where `<expr>` is an expression and `<ident>` is an identifier
+        // representing the field name. In the parser, we accept any kind of expression on
+        // the left side of the dot, but in the semantic analysis phase, we will ensure that
+        // the left side evaluates to only a subset of expressions that can have fields, like
+        // struct instances.
+        let dot_operator = atom
+            .clone()
+            .foldl_with(
+                just(lexer::Token::Delimiter("."))
+                    .ignore_then(atoms::identifier_parser())
+                    .repeated(),
+                |base, field, e| {
+                    Spanned::new(
+                        ast::Expr {
+                            kind: ast::ExprKind::FieldAccess(Box::new(base), field),
+                            ty: lang::ty::Type::Infer,
+                        },
+                        e.span(),
+                    )
+                },
+            )
+            .boxed();
+
         // Parse unary operators.
         let unary = atoms::unary_ops()
             .repeated()
-            .foldr_with(atom, |op, rhs, e| {
+            .foldr_with(dot_operator, |op, rhs, e| {
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Unary(op, Box::new(rhs)),
@@ -485,10 +557,14 @@ pub fn type_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
+    // A struct type is of the form `struct <ident>`, where `<ident>` is the name of the struct.
+    let strct = just(lexer::Token::Keyword("struct"))
+        .ignore_then(atoms::identifier_parser())
+        .map_with(|name, e| Spanned::new(lang::ty::Type::Struct(name.name.to_string()), e.span()));
+
     // An array type is of the form `<type>[<size>]`, where `<type>` is a built-in type
     // and `<size>` is a number literal representing the size of the array.
     let array = atoms::builtin_type_parser()
-        .clone()
         .then_ignore(just(lexer::Token::Delimiter("[")))
         .then(
             atoms::number_parser().validate(|count, e, emitter| match count.value.parse_u64() {
@@ -522,5 +598,5 @@ where
             Spanned::new(lang::ty::Type::Array(Box::new(ty.0), count), e.span())
         });
 
-    choice((array, atoms::builtin_type_parser())).boxed()
+    choice((strct, array, atoms::builtin_type_parser())).boxed()
 }

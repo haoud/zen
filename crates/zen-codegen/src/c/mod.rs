@@ -1,4 +1,7 @@
+use std::collections::HashSet;
+
 use crate::c::scope::Scope;
+use lang::{Spanned, ty::TypeTable};
 
 pub mod intrinsic;
 pub mod scope;
@@ -7,30 +10,48 @@ pub mod scope;
 /// the C code from the AST. It keeps track of the current scope depth
 /// and the generated code.
 #[derive(Debug)]
-pub struct Codegen {
+pub struct Codegen<'a> {
+    /// The set of generated struct names to avoid duplicate definitions and to
+    /// generate structs in the correct order (i.e. define a struct before it is used).
+    defined_structs: HashSet<&'a str>,
+
     /// The necessary includes for the generated C code.
     headers: String,
+
+    /// The generated struct definitions.
+    typedefs: String,
 
     /// The prototype declarations for the generated functions.
     prototypes: String,
 
+    /// Forward declarations of types.
+    ty_declarations: String,
+
     /// The generated functions.
     functions: String,
+
+    /// The type table used for type information during code generation.
+    #[allow(dead_code)]
+    types: TypeTable,
 
     /// The stack of scopes. The first scope in the stack is the global scope, and
     /// the last scope in the stack is the current scope.
     scopes: Vec<Scope>,
 }
 
-impl Codegen {
+impl<'a> Codegen<'a> {
     /// Create a new empty code generator
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(types: TypeTable) -> Self {
         Self {
+            defined_structs: HashSet::new(),
             scopes: vec![Scope::global()],
             headers: String::new(),
+            typedefs: String::new(),
             prototypes: String::new(),
+            ty_declarations: String::new(),
             functions: String::new(),
+            types,
         }
     }
 
@@ -116,7 +137,7 @@ impl Codegen {
     /// name and parameters. If the `prototype` flag is set to `true`, the function will
     /// add a semicolon at the end of the function declaration.
     pub fn generate_fn_header(&mut self, func: &ast::Function, prototype: bool) {
-        let ret = self.generate_type(&func.prototype.ret);
+        let ret = Self::generate_type(&func.prototype.ret);
         let mut code = String::new();
 
         // Generate the function return type and name
@@ -132,7 +153,7 @@ impl Codegen {
             .iter()
             .map(|param| {
                 let mutable = if !param.mutable { "const " } else { "" };
-                let TypeInfo { ctype, postfix } = self.generate_type(&param.ty);
+                let TypeInfo { ctype, postfix } = Self::generate_type(&param.ty);
                 let name = &param.ident.name;
                 format!("{mutable}{ctype} {name}{postfix}")
             })
@@ -172,6 +193,56 @@ impl Codegen {
         });
     }
 
+    /// Generate the forward declaration for the given struct. This function will generate
+    /// the struct declaration by adding a forward declaration to the `ty_declarations` field.
+    pub fn generate_struct_declaration(&mut self, strct: &ast::Struct) {
+        self.ty_declarations += &format!("struct {};\n", strct.ident.name);
+    }
+
+    /// Generate the C code for the given struct. This function will generate the struct
+    /// definition by iterating over the struct fields and generating the corresponding C code.
+    /// This function ensures that any field that use an structure are generated before being used
+    /// to avoid using an incomplete type in C that would lead to compilation errors.
+    /// If the struct has already been defined, this function will not generate the struct again.
+    pub fn generate_struct(
+        &mut self,
+        structures: &'a [Spanned<ast::TopLevelItem>],
+        strct: &'a ast::Struct,
+    ) {
+        // If the struct has already been defined, we skip the generation.
+        if self.defined_structs.contains(&strct.ident.name) {
+            return;
+        }
+
+        self.generate_struct_declaration(strct);
+        let mut typedefs = format!("struct {} {{\n", strct.ident.name);
+        for field in &strct.fields {
+            // Ensure that the referenced struct is generated before being used to
+            // avoid incomplete type compilation errors.
+            if let lang::ty::Type::Struct(name) = &field.ty.0 {
+                let strct = structures
+                    .iter()
+                    .find_map(|item| {
+                        if let ast::TopLevelItemKind::Struct(s) = &item.kind {
+                            if s.ident.name == *name {
+                                return Some(s);
+                            }
+                        }
+                        None
+                    })
+                    .expect("Struct type not found in the program");
+                self.generate_struct(structures, strct);
+            }
+            let TypeInfo { ctype, postfix } = Codegen::generate_type(&field.ty);
+            typedefs += &format!("\t{} {}{};\n", ctype, field.ident.name, postfix);
+        }
+        typedefs += "};\n";
+
+        self.typedefs += &typedefs;
+        self.typedefs += "\n";
+        self.defined_structs.insert(&strct.ident.name);
+    }
+
     /// Generate the C code for the given statement. This function will recursively generate the
     /// C code for the statement and its children. It will return the generated C code as a string.
     #[must_use]
@@ -186,17 +257,18 @@ impl Codegen {
             }
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
                 let mutable = if *mutable { "" } else { "const " };
-                let TypeInfo { ctype, postfix } = self.generate_type(ty);
+                let TypeInfo { ctype, postfix } = Self::generate_type(ty);
                 let value = self.generate_expr(expr, false);
                 format!(
                     "{mutable}{ctype} {ident}{postfix} = {value};",
                     ident = ident.name
                 )
             }
-            ast::StmtKind::Assign(op, ident, expr) => {
+            ast::StmtKind::Assign(op, lvalue, expr) => {
                 let op = op.as_ref().map(lang::BinaryOp::as_str).unwrap_or("");
+                let lvalue = self.generate_expr(lvalue, false);
                 let expr = self.generate_expr(expr, false);
-                format!("{ident} {op}= {expr};", ident = ident.name,)
+                format!("{lvalue} {op}= {expr};")
             }
             ast::StmtKind::If(cond, then_block, else_block) => {
                 let cond = self.generate_expr(cond, false);
@@ -258,8 +330,12 @@ impl Codegen {
             ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
             ast::ExprKind::String(s) => format!("\"{}\"", s.0),
+            ast::ExprKind::FieldAccess(expr, field) => {
+                let expr = self.generate_expr(expr, false);
+                format!("{}.{}", expr, field.name)
+            }
             ast::ExprKind::List(items) => {
-                let TypeInfo { ctype, postfix } = self.generate_type(&expr.ty);
+                let TypeInfo { ctype, postfix } = Self::generate_type(&expr.ty);
                 let compound_prefix = if compound {
                     format!("({}{})", ctype, postfix)
                 } else {
@@ -347,16 +423,17 @@ impl Codegen {
     ///    generated code, since it represents an value that can never be
     ///    constructed.
     #[must_use]
-    pub fn generate_type(&mut self, ty: &lang::ty::Type) -> TypeInfo {
+    pub fn generate_type(ty: &lang::ty::Type) -> TypeInfo {
         match ty {
             lang::ty::Type::Void => TypeInfo::simple("void".to_string()),
             lang::ty::Type::Str => TypeInfo::simple("char *".to_string()),
             lang::ty::Type::Bool => TypeInfo::simple("bool".to_string()),
             lang::ty::Type::Int => TypeInfo::simple("int".to_string()),
             lang::ty::Type::Array(ty, size) => {
-                let ctype = self.generate_type(ty);
+                let ctype = Self::generate_type(ty);
                 TypeInfo::array(ctype.ctype, *size)
             }
+            lang::ty::Type::Struct(name) => TypeInfo::simple(format!("struct {}", name)),
             lang::ty::Type::Unknown => {
                 unreachable!("Type::Unknown should not appear in the code generation phase")
             }
@@ -364,12 +441,6 @@ impl Codegen {
                 unreachable!("Type::Infer should not appear in the code generation phase")
             }
         }
-    }
-}
-
-impl Default for Codegen {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -410,18 +481,32 @@ impl TypeInfo {
 /// code generator, generate the function prototypes and bodies, and return the generated
 /// C code as a string.
 #[must_use]
-pub fn generate(funcs: &[lang::Spanned<ast::Function>]) -> String {
-    let mut codegen = Codegen::new();
+pub fn generate(program: &[lang::Spanned<ast::TopLevelItem>], types: TypeTable) -> String {
+    let mut codegen = Codegen::new(types);
     codegen.generate_comment_header();
     codegen.generate_includes();
 
-    // Generate all the functions and their prototypes
-    for func in funcs {
-        codegen.generate_fn_header(func, true);
-        codegen.generate_fn(func);
-        codegen.functions += "\n";
+    // Generate top-level items (functions and structs)
+    for item in program {
+        match &item.kind {
+            ast::TopLevelItemKind::Function(func) => {
+                codegen.generate_fn_header(func, true);
+                codegen.generate_fn(func);
+                codegen.functions += "\n";
+            }
+            ast::TopLevelItemKind::Struct(structure) => {
+                codegen.generate_struct(program, structure);
+            }
+        }
     }
 
     // Return the generated code separated by newlines for better readability.
-    codegen.headers + "\n" + &codegen.prototypes + "\n" + &codegen.functions
+    codegen.headers
+        + "\n"
+        + &codegen.ty_declarations
+        + "\n"
+        + &codegen.typedefs
+        + &codegen.prototypes
+        + "\n"
+        + &codegen.functions
 }

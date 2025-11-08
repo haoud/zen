@@ -1,0 +1,7 @@
+struct double {
+    triple: struct triple,
+}
+
+void main() {
+    let x: struct triple = 1;
+}

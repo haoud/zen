@@ -1,5 +1,20 @@
-int main() {
+struct indirect {
+    inner: struct data
+}
+
+struct data {
+    value: int,
+}
+
+void simple_var_assign() {
     var a := 5;
-    a = true;         // E013: Type mismatch in assignment
-    return a;
+    a = true;       // E013: Type mismatch in assignment
+}
+
+void simple_struct_assign(mut d: struct data) {
+    d.value = true;     // E013: Type mismatch in assignment
+}
+
+void indirect_struct_assign(mut node: struct indirect) {
+    node.inner.value = true; // E013: Type mismatch in assignment
 }

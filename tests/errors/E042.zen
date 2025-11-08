@@ -1,0 +1,11 @@
+struct a {
+    b: struct b,
+}
+
+struct b {
+    c: struct c,
+}
+
+struct c {
+    a: struct a,
+}

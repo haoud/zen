@@ -1,0 +1,5 @@
+struct bar {
+    foo: int,
+    baz: bool,
+    foo: bool,
+}

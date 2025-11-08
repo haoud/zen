@@ -107,6 +107,15 @@ impl<'src> Scope<'src> {
             .any(|scope| scope.symbols().variable_exists(ident))
     }
 
+    /// Check if a struct with the given identifier exists in the current scope.
+    #[must_use]
+    pub fn struct_exists(&self, ident: &str) -> bool {
+        self.scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.symbols().struct_exists(ident))
+    }
+
     /// Get a function with the given identifier from any scope in the stack.
     #[must_use]
     pub fn get_function(&self, ident: &str) -> Option<&Spanned<lang::sym::Function<'src>>> {
@@ -123,6 +132,15 @@ impl<'src> Scope<'src> {
             .iter()
             .rev()
             .find_map(|scope| scope.symbols().get_variable(ident))
+    }
+
+    /// Get a struct with the given identifier from any scope in the stack.
+    #[must_use]
+    pub fn get_struct(&self, ident: &str) -> Option<&Spanned<lang::sym::Struct<'src>>> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.symbols().get_struct(ident))
     }
 
     /// Insert a function into the current scope. Because shadowing is not allowed for functions,
@@ -191,6 +209,45 @@ impl<'src> Scope<'src> {
             self.current_scope_mut()
                 .symbols_mut()
                 .insert_variable(variable);
+        }
+    }
+
+    /// Insert a struct into the current scope. Because shadowing is not allowed for structs,
+    /// this will check all parent scopes to ensure no struct with the same identifier exists.
+    ///
+    /// # Error
+    /// If a struct with the same identifier already exists, an error will be added to the
+    /// semantic analysis context.
+    pub fn insert_struct(
+        &mut self,
+        errors: &mut SemanticDiagnostic<'src>,
+        strct: &Spanned<ast::Struct<'src>>,
+    ) {
+        if let Some(structure) = self.get_struct(strct.ident.name) {
+            errors.emit_struct_redefinition_error(strct.ident.name, strct.span(), structure.span());
+        } else {
+            self.current_scope_mut()
+                .symbols_mut()
+                .insert_struct(Spanned::new(
+                    lang::sym::Struct {
+                        name: strct.0.ident.name,
+                        fields: strct
+                            .0
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                Spanned::new(
+                                    lang::sym::Field {
+                                        name: field.ident.name,
+                                        ty: field.ty.0.clone(),
+                                    },
+                                    field.span(),
+                                )
+                            })
+                            .collect(),
+                    },
+                    strct.span(),
+                ));
         }
     }
 }

@@ -23,14 +23,58 @@ pub struct Literal<'src> {
     pub ty: Type,
 }
 
-/// A function parameter. Function parameters are used to define the parameters that
-/// a function takes. Each parameter is represented by an identifier and a type, and
-/// can be marked as mutable if the parameter can be modified within the function body.
+/// A top-level item in a program. Top-level items are the main building
+/// blocks of a program. They can be function definitions or struct definitions.
 #[derive(Debug, Clone, Hash)]
-pub struct FunctionParameter<'src> {
+pub struct TopLevelItem<'src> {
+    pub kind: TopLevelItemKind<'src>,
+}
+
+/// Different kinds of top-level items supported by the language.
+#[derive(Debug, Clone, Hash)]
+pub enum TopLevelItemKind<'src> {
+    /// A function definition.
+    Function(Spanned<Function<'src>>),
+
+    /// A struct definition.
+    Struct(Spanned<Struct<'src>>),
+}
+
+/// A struct. Structs are used to define custom data types that group
+/// together related data.
+#[derive(Debug, Clone, Hash)]
+pub struct Struct<'src> {
+    /// The identifier of the struct.
     pub ident: Spanned<Identifier<'src>>,
+
+    /// The fields that make up the struct.
+    pub fields: Vec<Spanned<StructField<'src>>>,
+}
+
+/// A field in a struct. Struct fields are used to define the members
+/// of a struct.
+#[derive(Debug, Clone, Hash)]
+pub struct StructField<'src> {
+    /// The identifier of the field.
+    pub ident: Spanned<Identifier<'src>>,
+
+    /// The type of the field.
     pub ty: Spanned<Type>,
-    pub mutable: bool,
+}
+
+/// A function. Functions are the main building blocks of the language.
+/// They can be called from other functions or from the entry point of
+/// the program. Functions can have a return type and a body that contains
+/// a list of expressions that are evaluated when the function is called.
+#[derive(Debug, Clone, Hash)]
+pub struct Function<'src> {
+    /// The prototype of the function. The prototype contains the name of
+    /// the function, the list of parameters that the function takes, and
+    /// the return type of the function.
+    pub prototype: Spanned<FunctionPrototype<'src>>,
+
+    /// A list of statements that make up the body of the function.
+    pub body: Vec<Spanned<Stmt<'src>>>,
 }
 
 /// A function prototype. A function prototype is a declaration of a function
@@ -51,19 +95,14 @@ pub struct FunctionPrototype<'src> {
     pub ret: Spanned<Type>,
 }
 
-/// A function. Functions are the main building blocks of the language.
-/// They can be called from other functions or from the entry point of
-/// the program. Functions can have a return type and a body that contains
-/// a list of expressions that are evaluated when the function is called.
+/// A function parameter. Function parameters are used to define the parameters that
+/// a function takes. Each parameter is represented by an identifier and a type, and
+/// can be marked as mutable if the parameter can be modified within the function body.
 #[derive(Debug, Clone, Hash)]
-pub struct Function<'src> {
-    /// The prototype of the function. The prototype contains the name of
-    /// the function, the list of parameters that the function takes, and
-    /// the return type of the function.
-    pub prototype: Spanned<FunctionPrototype<'src>>,
-
-    /// A list of statements that make up the body of the function.
-    pub body: Vec<Spanned<Stmt<'src>>>,
+pub struct FunctionParameter<'src> {
+    pub ident: Spanned<Identifier<'src>>,
+    pub ty: Spanned<Type>,
+    pub mutable: bool,
 }
 
 /// A block of statements. Blocks are used to group statements togethern and are typically
@@ -108,11 +147,11 @@ pub enum StmtKind<'src> {
     ),
 
     /// An assignment statement. The first element is an optional binary operator (for
-    /// compound assignments like `+=`), the second element is the identifier being assigned
+    /// compound assignments like `+=`), the second element is the expression being assigned
     /// to, and the third element is the expression being assigned to the identifier.
     Assign(
         Option<BinaryOp>,
-        Box<Spanned<Identifier<'src>>>,
+        Box<Spanned<Expr<'src>>>,
         Box<Spanned<Expr<'src>>>,
     ),
 
@@ -168,6 +207,10 @@ pub enum ExprKind<'src> {
 
     /// A list of expressions
     List(Vec<Spanned<Expr<'src>>>),
+
+    /// A field access. The first element is the expression being accessed, and the second
+    /// element is the identifier of the field being accessed.
+    FieldAccess(Box<Spanned<Expr<'src>>>, Spanned<Identifier<'src>>),
 
     /// A binary operation. The first element is the operator, the second element is the left-hand
     /// side expression, and the third element is the right-hand side expression.

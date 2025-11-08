@@ -1,4 +1,22 @@
+struct data {
+    metadata: struct metadata,
+    value: bool,
+}
+
+struct metadata {
+    alignment: int,
+    size: int,
+}
+
+int init_data(mut data: struct data) {
+    data.metadata.alignment = 8;
+    data.metadata.size += 16;
+    data.value = false;
+
+    return data.value;
+}
+
 // A simple Zen program
-int main(argc: int) {
+int main() {
     return 0;
 }
