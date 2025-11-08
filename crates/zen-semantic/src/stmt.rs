@@ -22,7 +22,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                         // If the function's return type is void, emitting an error since a value
                         // is being returned. Skip further checks for this return statement.
-                        if proto.ret.0 == lang::ty::Type::Void {
+                        if proto.ret.is_void() {
                             self.errors.emit_return_value_from_void_function_error(
                                 proto.span(),
                                 stmt_span,
@@ -42,7 +42,7 @@ impl<'src> SemanticAnalysis<'src> {
                     } else {
                         // Verify that the function's return type is void if no expression
                         // is returned.
-                        if proto.ret.0 != lang::ty::Type::Void {
+                        if proto.ret.is_void() {
                             self.errors
                                 .emit_missing_return_expression_error(&proto, stmt_span);
                         }
@@ -54,7 +54,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Verify that the variable is not declared with type void. If it is, emit an
                     // error and skip further checks for this variable declaration since it is
                     // invalid.
-                    if ty.0 == lang::ty::Type::Void {
+                    if ty.is_void() {
                         self.errors
                             .emit_void_variable_declaration_error(stmt_span, ident.name);
                         continue;
@@ -178,25 +178,23 @@ impl<'src> SemanticAnalysis<'src> {
         // operation (for compound assignments).
         if !recursion {
             if let Some(op) = assign_op {
-                // Get the type of the field being assigned to.
-                let ty = self
-                    .types
-                    .get_type_metadata(lvalue_ty)
-                    .expect("Type metadata should always exist")
-                    .get_field_type(field.name)
-                    .expect("Field should exist since it was checked during type inference");
-
-                let ty_metadata = self
-                    .types
-                    .get_type_metadata(&ty)
-                    .expect("Type metadata should always exist");
-                if !ty_metadata.support_binary_op(op) {
-                    self.errors
-                        .emit_invalid_binary_operation_for_type_error(op, &ty, field.span());
+                // Get the type of the field being assigned to and verify that it supports the
+                // assignment operation. If it does not, emit an error.
+                // If the lvalue type does not have the field, skip this check as an error
+                // should have already been emitted during expression checking.
+                if let Some(ty) = self.types.get_field(lvalue_ty, field.name) {
+                    if !self.types.support_binary_op(op, &ty) {
+                        self.errors.emit_invalid_binary_operation_for_type_error(
+                            op,
+                            &ty,
+                            field.span(),
+                        );
+                    }
                 }
             }
         }
 
+        // Depending on the kind of the lvalue, perform the appropriate checks.
         match &mut lvalue.kind {
             ast::ExprKind::Identifier(ident) => {
                 self.check_variable_assign(
@@ -219,7 +217,7 @@ impl<'src> SemanticAnalysis<'src> {
                 );
             }
             _ => {
-                unreachable!()
+                unreachable!("Invalid lvalue in field access assignment");
             }
         }
     }
@@ -247,12 +245,7 @@ impl<'src> SemanticAnalysis<'src> {
             if let Some(op) = assign_op
                 && !field_access
             {
-                self.types.try_add_builtin_type(&var.ty);
-                let ty_metadata = self
-                    .types
-                    .get_type_metadata(&var.ty)
-                    .expect("Type metadata should always exist");
-                if !ty_metadata.support_binary_op(op) {
+                if !self.types.support_binary_op(op, assign_ty) {
                     self.errors.emit_invalid_binary_operation_for_type_error(
                         op,
                         assign_ty,

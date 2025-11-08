@@ -13,7 +13,7 @@ int init_data(mut data: struct data) {
     data.metadata.size += 16;
     data.value = false;
 
-    return data.value;
+    return data.metadata.size;
 }
 
 // A simple Zen program

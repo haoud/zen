@@ -1,5 +1,8 @@
 use crate::error::SemanticDiagnostic;
-use lang::{self, Spanned, ty::TypeTable};
+use lang::{
+    self, Spanned,
+    ty::{StructMetadata, TypeTable},
+};
 use std::collections::HashMap;
 
 pub mod error;
@@ -38,21 +41,21 @@ impl<'src> SemanticAnalysis<'src> {
 
     /// Perform semantic analysis on the given program
     pub fn check_program(&mut self, program: &mut [Spanned<ast::TopLevelItem<'src>>]) {
-        // First, insert all function prototypes and struct definitions into the global scope
-        // to allow for forward references during the analysis.
+        // First, insert all function prototypes into the global scope and insert all struct
+        // definitions into the type table without checking their fields or bodies to allow for
+        // forward references during the analysis.
         for item in program.iter_mut() {
             match &mut item.0.kind {
                 ast::TopLevelItemKind::Function(func) => {
                     self.scopes.insert_function(&mut self.errors, func);
                 }
-                ast::TopLevelItemKind::Struct(strct) => {
-                    self.scopes.insert_struct(&mut self.errors, strct);
+                ast::TopLevelItemKind::Struct(structure) => {
+                    self.insert_struct(structure);
                 }
             }
         }
 
         // Now, check all struct definitions to ensure their fields are semantically correct
-        // and add their types to the type table for later use.
         for item in program.iter_mut() {
             if let ast::TopLevelItemKind::Struct(structure) = &mut item.0.kind {
                 self.check_struct(structure);
@@ -67,10 +70,52 @@ impl<'src> SemanticAnalysis<'src> {
         }
     }
 
+    /// Insert a struct definition into the type table, checking for redeclarations. This function
+    /// only checks for redeclarations of the struct itself and its fields, but does not check the
+    /// field types for correctness at this stage. More detailed checks are performed later in
+    /// `check_struct`.
+    pub fn insert_struct(&mut self, structure: &Spanned<ast::Struct<'src>>) {
+        // Check for struct redeclaration.
+        if let Some(first) = self.types.get_struct_metadata(&structure.ident.name) {
+            self.errors.emit_struct_redefinition_error(
+                structure.ident.name,
+                structure.span(),
+                first.span,
+            );
+        } else {
+            // Collect field types and check for redeclarations
+            let mut fields = HashMap::new();
+            let span = structure.span();
+
+            for field in &structure.fields {
+                if fields.contains_key(field.ident.name) {
+                    let first = &structure
+                        .fields
+                        .iter()
+                        .find(|f| f.ident.name == field.ident.name)
+                        .unwrap();
+                    self.errors.emit_struct_field_redeclaration_error(
+                        field.ident.name,
+                        field.span(),
+                        first.span(),
+                    );
+                } else {
+                    fields.insert(field.ident.name.to_owned(), field.ty.inner().clone());
+                }
+            }
+
+            // Insert the struct metadata into the type table
+            self.types.insert_struct(
+                structure.ident.name.to_string(),
+                StructMetadata { fields, span },
+            );
+        }
+    }
+
     /// Check a function for semantic correctness.
     pub fn check_function(&mut self, function: &mut Spanned<ast::Function<'src>>) {
         // Verify that array types are not used as function parameter types.
-        if let lang::ty::Type::Array(_, _) = function.prototype.ret.0 {
+        if function.prototype.ret.is_array() {
             self.errors.emit_array_type_as_function_return_type_error(
                 function.prototype.ret.span(),
                 &function.prototype,
@@ -81,7 +126,7 @@ impl<'src> SemanticAnalysis<'src> {
         self.scopes.enter_scope();
         for param in &function.prototype.params {
             // Verify that function parameters are not declared with the void type.
-            if param.ty.0 == lang::ty::Type::Void {
+            if param.ty.is_void() {
                 self.errors
                     .emit_void_function_parameter_error(param.span(), &function.prototype);
             }
@@ -108,49 +153,25 @@ impl<'src> SemanticAnalysis<'src> {
         cfa.check_block(&function.0.body, function);
     }
 
-    /// Check a struct definition for semantic correctness.
+    /// Check a struct definition for semantic correctness. This includes verifying that
+    /// field types are valid and that there are no recursive struct definitions that would
+    /// lead to infinite size types.
     pub fn check_struct(&mut self, structure: &mut Spanned<ast::Struct<'src>>) {
-        let struct_ty = lang::ty::Type::Struct(structure.ident.name.to_owned());
         let struct_span = structure.ident.span();
         let struct_name = structure.ident.name;
-        let mut metadata = lang::ty::TypeMetadata::build(&struct_ty);
-
-        // Check for redeclaration of the struct type. If it already exists, we simply
-        // skip adding it again, but we do not emit an error here since it was already
-        // handled during the scope insertion phase.
-        if self.types.get_type_metadata(&struct_ty).is_some() {
-            return;
-        }
-
-        // Verify that there are no duplicate field names.
-        let mut fieldmap = HashMap::new();
-        for field in &structure.fields {
-            if let Some(previous) = fieldmap.get(field.ident.name) {
-                self.errors.emit_struct_field_redeclaration_error(
-                    field.ident.name,
-                    field.span(),
-                    *previous,
-                );
-            } else {
-                fieldmap.insert(field.ident.name, field.span());
-            }
-        }
 
         for field in &mut structure.fields {
             // Void type is not allowed for struct fields.
-            if field.ty.0 == lang::ty::Type::Void {
+            if field.ty.is_void() {
                 self.errors
                     .emit_void_field_declaration_error(field.ty.span(), field);
+                field.ty.0 = lang::ty::Type::Unknown;
             }
 
-            // Special checks for struct types used as field types.
+            // Special checks for fields that are structs.
             if let lang::ty::Type::Struct(name) = &field.ty.0 {
-                // If we reach here, the type may still be defined later in the program, so
-                // we check the symbol table to see if it's a known struct type. If not, we
-                // can now emit an unknown type error and we set the field type to Unknown
-                // to ensure that further analysis can continue and will not try to use this
-                // invalid type.
-                if self.scopes.get_struct(name).is_none() {
+                // Check in the type table if the struct type exists.
+                if !self.types.struct_exists(name) {
                     self.errors
                         .emit_unknown_type_error(field.ty.span(), &field.ty.0);
                     field.ty.0 = lang::ty::Type::Unknown;
@@ -168,12 +189,7 @@ impl<'src> SemanticAnalysis<'src> {
                     field.ty.0 = lang::ty::Type::Unknown;
                 }
             }
-
-            metadata
-                .fields
-                .insert(field.ident.name.to_owned(), field.ty.0.clone());
         }
-        self.types.add_type(struct_ty, metadata);
     }
 
     /// Check for indirect recursion in struct definitions. This function will recursively
@@ -185,9 +201,9 @@ impl<'src> SemanticAnalysis<'src> {
                 if name == struct_name {
                     return true;
                 }
-                if let Some(structure) = self.scopes.get_struct(name) {
-                    for field in &structure.fields {
-                        if self.check_indirect_recursion(&field.ty, struct_name) {
+                if let Some(structure) = self.types.get_struct_metadata(name) {
+                    for (_, field_type) in &structure.fields {
+                        if self.check_indirect_recursion(field_type, struct_name) {
                             return true;
                         }
                     }

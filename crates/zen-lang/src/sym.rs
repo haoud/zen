@@ -29,28 +29,12 @@ pub struct Function<'src> {
     pub ret: Type,
 }
 
-/// A structure definition.
-#[derive(Debug, Clone)]
-pub struct Struct<'src> {
-    /// The name of the struct.
-    pub name: &'src str,
-
-    pub fields: Vec<Spanned<Field<'src>>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Field<'src> {
-    pub name: &'src str,
-    pub ty: Type,
-}
-
 /// A symbol table containing variables and functions. It supports insertion and lookup of symbols,
 /// but does not handle scope or shadowing.
 #[derive(Debug, Clone)]
 pub struct SymbolTable<'src> {
     variables: HashMap<&'src str, Spanned<Variable<'src>>>,
     functions: HashMap<&'src str, Spanned<Function<'src>>>,
-    structs: HashMap<&'src str, Spanned<Struct<'src>>>,
 }
 
 impl<'src> SymbolTable<'src> {
@@ -60,7 +44,6 @@ impl<'src> SymbolTable<'src> {
         Self {
             variables: HashMap::new(),
             functions: HashMap::new(),
-            structs: HashMap::new(),
         }
     }
 
@@ -84,16 +67,6 @@ impl<'src> SymbolTable<'src> {
         self.functions.insert(function.name, function);
     }
 
-    /// Insert a new struct into the symbol table.
-    ///
-    /// # Panics
-    /// This function will panic if a struct with the same name already exists in the symbol
-    /// table. This should never happen if the semantic analysis is done correctly.
-    pub fn insert_struct(&mut self, structure: Spanned<Struct<'src>>) {
-        assert!(!self.structs.contains_key(structure.name));
-        self.structs.insert(structure.name, structure);
-    }
-
     /// Check if a variable with the given name exists in the symbol table.
     #[must_use]
     pub fn variable_exists(&self, name: &str) -> bool {
@@ -106,12 +79,6 @@ impl<'src> SymbolTable<'src> {
         self.functions.contains_key(name)
     }
 
-    /// Check if a struct with the given name exists in the symbol table.
-    #[must_use]
-    pub fn struct_exists(&self, name: &str) -> bool {
-        self.structs.contains_key(name)
-    }
-
     /// Get a reference to a variable by name.
     #[must_use]
     pub fn get_variable(&self, name: &str) -> Option<&Spanned<Variable<'src>>> {
@@ -122,12 +89,6 @@ impl<'src> SymbolTable<'src> {
     #[must_use]
     pub fn get_function(&self, name: &str) -> Option<&Spanned<Function<'src>>> {
         self.functions.get(name)
-    }
-
-    /// Get a reference to a struct by name.
-    #[must_use]
-    pub fn get_struct(&self, name: &str) -> Option<&Spanned<Struct<'src>>> {
-        self.structs.get(name)
     }
 }
 

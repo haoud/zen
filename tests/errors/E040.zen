@@ -1,4 +1,3 @@
-struct duplicate {
-    a: int,
-    a: int,
+struct data {
+    value: struct unknown
 }

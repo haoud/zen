@@ -1,6 +1,5 @@
-use lang::Spanned;
-
 use crate::SemanticAnalysis;
+use lang::Spanned;
 
 impl<'src> SemanticAnalysis<'src> {
     /// Check an expression for semantic correctness, returning any errors found.
@@ -31,17 +30,8 @@ impl<'src> SemanticAnalysis<'src> {
                     return;
                 }
 
-                // Get the type metadata for the left-hand side type to check if it supports
-                // the given binary operation. Since both sides should have the same type, we only
-                // need to check one side.
-                self.types.try_add_builtin_type(&lhs.ty);
-                let ty_metadata = self
-                    .types
-                    .get_type_metadata(&lhs.ty)
-                    .expect("Type metadata should always exist");
-
                 // If the operation is not supported by the type, emit an error.
-                if !ty_metadata.support_binary_op(*op) {
+                if !self.types.support_binary_op(*op, &lhs.ty) {
                     self.errors
                         .emit_invalid_binary_operation_for_type_error(*op, &lhs.ty, span);
                 }
@@ -62,16 +52,8 @@ impl<'src> SemanticAnalysis<'src> {
                     return;
                 }
 
-                // Get the type metadata for the right-hand side type to check if it supports
-                // the given unary operation.
-                self.types.try_add_builtin_type(&rhs.ty);
-                let ty_metadata = self
-                    .types
-                    .get_type_metadata(&rhs.ty)
-                    .expect("Type metadata should always exist");
-
                 // If the operation is not supported by the type, emit an error.
-                if !ty_metadata.support_unary_op(*op) {
+                if !self.types.support_unary_op(*op, &rhs.ty) {
                     self.errors
                         .emit_invalid_unary_operation_for_type_error(*op, &rhs.ty, span);
                 }
@@ -133,7 +115,7 @@ impl<'src> SemanticAnalysis<'src> {
                             self.errors.emit_intrinsic_argument_type_mismatch_error(
                                 ident,
                                 &args[0],
-                                lang::ty::Type::Str,
+                                lang::ty::Type::Builtin(lang::ty::BuiltinType::Str),
                             );
                             return;
                         };
@@ -163,27 +145,33 @@ impl<'src> SemanticAnalysis<'src> {
             }
             ast::ExprKind::Literal(x) => {
                 // Ensure that integer literals fit within the bounds of the integer type.
-                match x.ty {
-                    lang::ty::Type::Int => {
-                        if x.value.parse_i64(negated).is_err() {
-                            self.errors.emit_literal_overflow_error(x);
-                        }
-                    }
-                    lang::ty::Type::Void => {
-                        unreachable!("Void literals should not exist in the AST")
-                    }
-                    lang::ty::Type::Str => {
-                        unreachable!("String literals should always have type String after parsing")
-                    }
-                    lang::ty::Type::Bool => {
-                        unreachable!("Boolean literals should always have type Bool after parsing")
-                    }
+                match &x.ty {
                     lang::ty::Type::Array(_, _) => {
                         unreachable!("Array literals should be represented as List expressions")
                     }
                     lang::ty::Type::Struct(_) => {
-                        todo!()
+                        unreachable!("Struct literals should be represented as field initializers")
                     }
+                    lang::ty::Type::Builtin(ty) => match ty {
+                        lang::ty::BuiltinType::Int => {
+                            if x.value.parse_i64(negated).is_err() {
+                                self.errors.emit_literal_overflow_error(x);
+                            }
+                        }
+                        lang::ty::BuiltinType::Void => {
+                            unreachable!("Void literals should not exist in the AST")
+                        }
+                        lang::ty::BuiltinType::Str => {
+                            unreachable!(
+                                "String literals should always have type String after parsing"
+                            )
+                        }
+                        lang::ty::BuiltinType::Bool => {
+                            unreachable!(
+                                "Boolean literals should always have type Bool after parsing"
+                            )
+                        }
+                    },
                     lang::ty::Type::Infer | lang::ty::Type::Unknown => {
                         unreachable!("Literal types should be inferred during type inference")
                     }
@@ -254,7 +242,7 @@ impl<'src> SemanticAnalysis<'src> {
                     | lang::BinaryOp::Gt
                     | lang::BinaryOp::Gte => {
                         // Logical and comparison operators always yield a boolean result.
-                        expr.ty = lang::ty::Type::Bool;
+                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Bool);
                     }
 
                     lang::BinaryOp::Add
@@ -282,7 +270,7 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                     lang::UnaryOp::Not => {
                         // Logical NOT operator always yields a boolean result.
-                        expr.ty = lang::ty::Type::Bool;
+                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Bool);
                     }
                 }
             }
@@ -325,7 +313,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Set the types for known intrinsic functions. If an intrinsic is not listed
                     // here, we default to `Unknown` type.
                     "println" | "print" => {
-                        expr.ty = lang::ty::Type::Void;
+                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Void);
                     }
                     _ => expr.ty = lang::ty::Type::Unknown,
                 }
@@ -361,24 +349,17 @@ impl<'src> SemanticAnalysis<'src> {
                     return;
                 }
 
-                if let Some(metadata) = self.types.get_type_metadata(&expression.ty) {
-                    // Get the field type from the expression's type. If the field exists, set the
-                    // expression's type to the field's type. Otherwise, set it to `Unknown` and emit
-                    // an error indicating the field does not exist.
-                    if let Some(ty) = metadata.fields.get(field.name) {
-                        expr.ty = ty.clone();
-                    } else {
-                        self.errors.emit_unknown_field_access_error(
-                            field,
-                            &expression.ty,
-                            expression.span(),
-                        );
-                        expr.ty = lang::ty::Type::Unknown;
-                    }
+                // Get the field type from the expression's type. If the field exists, set the
+                // expression's type to the field's type. Otherwise, set it to `Unknown` and emit
+                // an error indicating the field does not exist.
+                if let Some(ty) = self.types.get_field(&expression.ty, field.name) {
+                    expr.ty = ty.clone();
                 } else {
-                    // TODO: Should we emit an error here if the type metadata does not exist? I
-                    // don't think so since this means that the type itself is unknown, which should
-                    // have already emitted an error earlier.
+                    self.errors.emit_unknown_field_access_error(
+                        field,
+                        &expression.ty,
+                        expression.span(),
+                    );
                     expr.ty = lang::ty::Type::Unknown;
                 }
             }

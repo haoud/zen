@@ -2,7 +2,10 @@
 //! are the simplest forms of expressions that cannot be broken down further, and therefore
 //! serve as the building blocks for more complex expressions.
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{Span, Spanned};
+use lang::{
+    Span, Spanned,
+    ty::{BuiltinType, Type},
+};
 
 use super::ParserError;
 
@@ -17,7 +20,7 @@ where
     select! {
         lexer::Token::Number(val) = e => Spanned::new(
             ast::Literal {
-                ty: lang::ty::Type::Int,
+                ty: Type::Builtin(BuiltinType::Int),
                 value: val,
             },
             e.span()
@@ -50,14 +53,14 @@ where
         lexer::Token::Keyword("true") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(true, e.span())),
-                ty: lang::ty::Type::Bool,
+                ty: Type::Builtin(BuiltinType::Bool),
             },
             e.span()
         ),
         lexer::Token::Keyword("false") = e => Spanned::new(
             ast::Expr {
                 kind: ast::ExprKind::Bool(Spanned::new(false, e.span())),
-                ty: lang::ty::Type::Bool,
+                ty: Type::Builtin(BuiltinType::Bool),
             },
             e.span()
         ),
@@ -73,10 +76,10 @@ where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::Identifier("bool") = e => Spanned::new(lang::ty::Type::Bool, e.span()),
-        lexer::Token::Identifier("int") = e => Spanned::new(lang::ty::Type::Int, e.span()),
-        lexer::Token::Identifier("str") = e => Spanned::new(lang::ty::Type::Str, e.span()),
-        lexer::Token::Identifier("void") = e => Spanned::new(lang::ty::Type::Void, e.span()),
+        lexer::Token::Identifier("bool") = e => Spanned::new(Type::Builtin(BuiltinType::Bool), e.span()),
+        lexer::Token::Identifier("int") = e => Spanned::new(Type::Builtin(BuiltinType::Int), e.span()),
+        lexer::Token::Identifier("str") = e => Spanned::new(Type::Builtin(BuiltinType::Str), e.span()),
+        lexer::Token::Identifier("void") = e => Spanned::new(Type::Builtin(BuiltinType::Void), e.span()),
     }
 }
 

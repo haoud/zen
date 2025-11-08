@@ -1,4 +1,7 @@
-use lang::{Spanned, ty::Type};
+use lang::{
+    Spanned,
+    ty::{BuiltinType, Type},
+};
 
 use crate::c::Codegen;
 
@@ -22,7 +25,7 @@ impl Codegen<'_> {
                     format!("{}", elements)
                 }
                 ast::ExprKind::Identifier(ident) => match **ty {
-                    Type::Bool => {
+                    Type::Builtin(BuiltinType::Bool) => {
                         let elements = (0..*size)
                             .map(|i| Self::emit_bool_to_str(&format!("{}[{}]", ident.name, i)))
                             .collect::<Vec<String>>()
@@ -44,7 +47,9 @@ impl Codegen<'_> {
             },
             // Special handling for boolean types to convert them to "true" or "false" strings
             // before passing them to the formatting function.
-            Type::Bool => Self::emit_bool_to_str(&self.generate_expr(expr, false)),
+            Type::Builtin(BuiltinType::Bool) => {
+                Self::emit_bool_to_str(&self.generate_expr(expr, false))
+            }
             // For all other types, just generate the expression normally since they are natively
             // supported by C's printf function.
             _ => self.generate_expr(expr, false),
@@ -99,9 +104,6 @@ pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
 /// for functions that do not return a value.
 pub fn get_fmt_specifier(ty: &Type) -> String {
     match ty {
-        Type::Bool => "%s".to_owned(), // Booleans will be printed as "true" or "false"
-        Type::Int => "%d".to_owned(),
-        Type::Str => "\\\"%s\\\"".to_owned(),
         Type::Array(ty, len) => {
             format!(
                 "[{}]",
@@ -115,6 +117,12 @@ pub fn get_fmt_specifier(ty: &Type) -> String {
             // TODO: Display struct fields properly and not just the struct name
             format!("struct {} {{ <todo> }}", name)
         }
-        Type::Unknown | Type::Infer | Type::Void => unreachable!(),
+        Type::Builtin(ty) => match ty {
+            BuiltinType::Bool => "%s".to_owned(), // Booleans will be printed as "true" or "false"
+            BuiltinType::Int => "%d".to_owned(),
+            BuiltinType::Str => "\\\"%s\\\"".to_owned(),
+            BuiltinType::Void => unreachable!(),
+        },
+        Type::Infer | Type::Unknown => unreachable!(),
     }
 }

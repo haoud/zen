@@ -1,6 +1,9 @@
 use ast::TopLevelItemKind;
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{Span, Spanned};
+use lang::{
+    Span, Spanned,
+    ty::{BuiltinType, Type},
+};
 
 pub mod atoms;
 
@@ -310,7 +313,7 @@ where
             Spanned::new(
                 ast::Expr {
                     kind: ast::ExprKind::String(s),
-                    ty: lang::ty::Type::Str,
+                    ty: Type::Builtin(BuiltinType::Str),
                 },
                 e.span(),
             )
@@ -401,7 +404,7 @@ where
                 Spanned::new(
                     ast::Expr {
                         kind: ast::ExprKind::Literal(lit),
-                        ty: lang::ty::Type::Int,
+                        ty: Type::Builtin(BuiltinType::Int),
                     },
                     e.span(),
                 )

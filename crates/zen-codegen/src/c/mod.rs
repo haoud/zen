@@ -425,25 +425,23 @@ impl<'a> Codegen<'a> {
     #[must_use]
     pub fn generate_type(ty: &lang::ty::Type) -> TypeInfo {
         match ty {
-            lang::ty::Type::Void => TypeInfo::simple("void".to_string()),
-            lang::ty::Type::Str => TypeInfo::simple("char *".to_string()),
-            lang::ty::Type::Bool => TypeInfo::simple("bool".to_string()),
-            lang::ty::Type::Int => TypeInfo::simple("int".to_string()),
-            lang::ty::Type::Array(ty, size) => {
-                let ctype = Self::generate_type(ty);
-                TypeInfo::array(ctype.ctype, *size)
-            }
             lang::ty::Type::Struct(name) => TypeInfo::simple(format!("struct {}", name)),
-            lang::ty::Type::Unknown => {
-                unreachable!("Type::Unknown should not appear in the code generation phase")
+            lang::ty::Type::Array(ty, len) => {
+                let ctype = Self::generate_type(ty);
+                TypeInfo::array(ctype.ctype, *len)
             }
-            lang::ty::Type::Infer => {
+            lang::ty::Type::Builtin(ty) => match ty {
+                lang::ty::BuiltinType::Void => TypeInfo::simple("void".to_string()),
+                lang::ty::BuiltinType::Str => TypeInfo::simple("char *".to_string()),
+                lang::ty::BuiltinType::Bool => TypeInfo::simple("bool".to_string()),
+                lang::ty::BuiltinType::Int => TypeInfo::simple("int".to_string()),
+            },
+            lang::ty::Type::Infer | lang::ty::Type::Unknown => {
                 unreachable!("Type::Infer should not appear in the code generation phase")
             }
         }
     }
 }
-
 /// Information about a type in C. This struct contains the C type as a string,
 /// as well as any postfix that needs to be added to the type when declaring
 /// variables of that type (e.g. for arrays).
