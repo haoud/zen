@@ -1,8 +1,9 @@
 use crate::error::SemanticDiagnostic;
 use lang::{
-    self, Spanned,
+    self,
     ty::{StructMetadata, TypeTable},
 };
+use span::Spanned;
 use std::collections::HashMap;
 
 pub mod error;
@@ -45,7 +46,7 @@ impl<'src> SemanticAnalysis<'src> {
         // definitions into the type table without checking their fields or bodies to allow for
         // forward references during the analysis.
         for item in program.iter_mut() {
-            match &mut item.0.kind {
+            match &mut item.kind {
                 ast::TopLevelItemKind::Function(func) => {
                     self.scopes.insert_function(&mut self.errors, func);
                 }
@@ -57,14 +58,14 @@ impl<'src> SemanticAnalysis<'src> {
 
         // Now, check all struct definitions to ensure their fields are semantically correct
         for item in program.iter_mut() {
-            if let ast::TopLevelItemKind::Struct(structure) = &mut item.0.kind {
+            if let ast::TopLevelItemKind::Struct(structure) = &mut item.kind {
                 self.check_struct(structure);
             }
         }
 
         // Now, check each function for semantic correctness.
-        for items in program.iter_mut() {
-            if let ast::TopLevelItemKind::Function(function) = &mut items.0.kind {
+        for item in program.iter_mut() {
+            if let ast::TopLevelItemKind::Function(function) = &mut item.kind {
                 self.check_function(function);
             }
         }
@@ -138,7 +139,7 @@ impl<'src> SemanticAnalysis<'src> {
                     lang::sym::Variable {
                         mutable: param.mutable,
                         name: param.ident.name,
-                        ty: param.ty.0.clone(),
+                        ty: param.ty.inner().clone(),
                     },
                     param.span(),
                 ),
@@ -150,7 +151,7 @@ impl<'src> SemanticAnalysis<'src> {
         // Simple control flow analysis to ensure all code paths return a value and to
         // identify unreachable code.
         let mut cfa = flow::ControlFlowAnalysis::new(&mut self.errors);
-        cfa.check_block(&function.0.body, function);
+        cfa.check_block(&function.body, function);
     }
 
     /// Check a struct definition for semantic correctness. This includes verifying that
@@ -165,28 +166,28 @@ impl<'src> SemanticAnalysis<'src> {
             if field.ty.is_void() {
                 self.errors
                     .emit_void_field_declaration_error(field.ty.span(), field);
-                field.ty.0 = lang::ty::Type::Unknown;
+                *field.ty = lang::ty::Type::Unknown;
             }
 
             // Special checks for fields that are structs.
-            if let lang::ty::Type::Struct(name) = &field.ty.0 {
+            if let lang::ty::Type::Struct(name) = &field.ty.inner() {
                 // Check in the type table if the struct type exists.
                 if !self.types.struct_exists(name) {
                     self.errors
-                        .emit_unknown_type_error(field.ty.span(), &field.ty.0);
-                    field.ty.0 = lang::ty::Type::Unknown;
+                        .emit_unknown_type_error(field.ty.span(), &field.ty.inner());
+                    *field.ty = lang::ty::Type::Unknown;
                 }
 
                 // Recursive struct definitions are not allowed to prevent infinite size types.
                 // We check if the field type is the same as the struct being defined, but we
                 // also need to consider indirect recursion involving other structs.
-                if self.check_indirect_recursion(&field.ty.0, &struct_name) {
+                if self.check_indirect_recursion(&field.ty.inner(), &struct_name) {
                     self.errors.emit_infinite_struct_size_error(
                         &struct_name,
                         struct_span,
                         field.ty.span(),
                     );
-                    field.ty.0 = lang::ty::Type::Unknown;
+                    *field.ty = lang::ty::Type::Unknown;
                 }
             }
         }

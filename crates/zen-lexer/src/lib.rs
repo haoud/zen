@@ -9,7 +9,8 @@
 //! the complexity of writing a lexer, which is nice as it allows us to focus on the language
 //! itself rather than some "boring" implementation details.
 use chumsky::prelude::*;
-use lang::{Literal, LiteralBase, Span, Spanned};
+use lang::{Literal, LiteralBase};
+use span::{Span, Spanned};
 
 #[cfg(test)]
 pub mod tests;
@@ -27,7 +28,7 @@ pub mod tests;
 /// using an enum to represent these tokens as it requires comparing strings instead of comparing
 /// enum variants, which is faster. But this is simpler to implement and understand.
 /// TODO: Consider changing this in the future when performance becomes a concern.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token<'a> {
     /// A keyword is a special identifier that has a predefined meaning in the language.
     /// Keywords are reserved and cannot be used as identifiers. For example, `if`, `else`,

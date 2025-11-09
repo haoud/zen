@@ -26,7 +26,7 @@ pub fn lex_keywords() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -44,7 +44,7 @@ pub fn lex_numbers() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -61,7 +61,7 @@ pub fn lex_strings() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -90,7 +90,7 @@ pub fn lex_operators() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -116,7 +116,7 @@ pub fn lex_delimiters() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -161,7 +161,7 @@ pub fn lex_mixed_input() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }
@@ -183,7 +183,7 @@ pub fn lex_identifier_with_keyword() {
         .parse(input)
         .unwrap()
         .into_iter()
-        .map(|spanned| spanned.0)
+        .map(|spanned| spanned.into_inner())
         .collect::<Vec<_>>();
     assert_eq!(result, expected);
 }

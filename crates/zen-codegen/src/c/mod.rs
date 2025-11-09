@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use crate::c::scope::Scope;
-use lang::{Spanned, ty::TypeTable};
+use lang::ty::TypeTable;
+use span::Spanned;
 
 pub mod intrinsic;
 pub mod scope;
@@ -219,7 +220,7 @@ impl<'a> Codegen<'a> {
         for field in &strct.fields {
             // Ensure that the referenced struct is generated before being used to
             // avoid incomplete type compilation errors.
-            if let lang::ty::Type::Struct(name) = &field.ty.0 {
+            if let lang::ty::Type::Struct(name) = &*field.ty {
                 let strct = structures
                     .iter()
                     .find_map(|item| {
@@ -329,7 +330,7 @@ impl<'a> Codegen<'a> {
         match &expr.kind {
             ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
-            ast::ExprKind::String(s) => format!("\"{}\"", s.0),
+            ast::ExprKind::String(s) => format!("\"{}\"", **s),
             ast::ExprKind::FieldAccess(expr, field) => {
                 let expr = self.generate_expr(expr, false);
                 format!("{}.{}", expr, field.name)
@@ -350,7 +351,7 @@ impl<'a> Codegen<'a> {
                 format!("{} {{{}}}", compound_prefix, items)
             }
             ast::ExprKind::Bool(b) => {
-                if b.0 {
+                if **b {
                     "true".to_string()
                 } else {
                     "false".to_string()
@@ -479,7 +480,7 @@ impl TypeInfo {
 /// code generator, generate the function prototypes and bodies, and return the generated
 /// C code as a string.
 #[must_use]
-pub fn generate(program: &[lang::Spanned<ast::TopLevelItem>], types: TypeTable) -> String {
+pub fn generate(program: &[Spanned<ast::TopLevelItem>], types: TypeTable) -> String {
     let mut codegen = Codegen::new(types);
     codegen.generate_comment_header();
     codegen.generate_includes();

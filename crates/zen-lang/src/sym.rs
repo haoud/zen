@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{Spanned, ty::Type};
+use span::Spanned;
+
+use crate::ty::Type;
 
 /// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,8 +55,8 @@ impl<'src> SymbolTable<'src> {
     /// This function will panic if a variable with the same name already exists in the symbol
     /// table. This should never happen if the semantic analysis is done correctly.
     pub fn insert_variable(&mut self, variable: Spanned<Variable<'src>>) {
-        assert!(!self.variable_exists(variable.name));
-        self.variables.insert(variable.name, variable);
+        assert!(!self.variable_exists(variable.inner().name));
+        self.variables.insert(variable.inner().name, variable);
     }
 
     /// Insert a new function into the symbol table.
@@ -63,8 +65,8 @@ impl<'src> SymbolTable<'src> {
     /// This function will panic if a function with the same name already exists in the symbol
     /// table. This should never happen if the semantic analysis is done correctly.
     pub fn insert_function(&mut self, function: Spanned<Function<'src>>) {
-        assert!(!self.function_exists(function.name));
-        self.functions.insert(function.name, function);
+        assert!(!self.function_exists(function.inner().name));
+        self.functions.insert(function.inner().name, function);
     }
 
     /// Check if a variable with the given name exists in the symbol table.

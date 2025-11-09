@@ -5,7 +5,7 @@
 //! code itself.
 use ariadne::{Color, ReportKind};
 use ast::StructField;
-use lang::Spanned;
+use span::{Span, Spanned};
 
 use crate::SemanticError;
 
@@ -194,8 +194,8 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_function_redefinition_error(
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
-        og_span: lang::Span,
-        fn_span: lang::Span,
+        og_span: Span,
+        fn_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
@@ -221,7 +221,7 @@ impl<'src> SemanticDiagnostic<'src> {
     /// Emit an unreachable code error, when code is found after a return statement that can
     /// never be executed.
     #[cold]
-    pub fn emit_unreachable_code_error(&mut self, ret_span: lang::Span, stmt_span: lang::Span) {
+    pub fn emit_unreachable_code_error(&mut self, ret_span: Span, stmt_span: Span) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
                 .with_code(SemanticErrorKind::UnreachableCode as u32)
@@ -246,7 +246,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_return_type_mismatch_error(
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
-        ret_expr_span: lang::Span,
+        ret_expr_span: Span,
         ret_type: &lang::ty::Type,
     ) {
         self.errors.push(
@@ -258,7 +258,7 @@ impl<'src> SemanticDiagnostic<'src> {
             .with_message(format!("return type mismatch"))
             .with_label(
                 ariadne::Label::new((self.filename, proto.ret.span().into_range()))
-                    .with_message(format!("Expected return type '{}'", proto.ret.0))
+                    .with_message(format!("Expected return type '{}'", proto.ret.inner()))
                     .with_color(Color::Cyan),
             )
             .with_label(
@@ -278,7 +278,7 @@ impl<'src> SemanticDiagnostic<'src> {
         op: lang::BinaryOp,
         lhs: &Spanned<ast::Expr<'src>>,
         rhs: &Spanned<ast::Expr<'src>>,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -353,7 +353,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         expr: &Spanned<ast::Expr<'src>>,
         ty: &Spanned<lang::ty::Type>,
-        stmt_span: lang::Span,
+        stmt_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
@@ -361,7 +361,7 @@ impl<'src> SemanticDiagnostic<'src> {
                 .with_message(format!("type mismatch in variable definition",))
                 .with_label(
                     ariadne::Label::new((self.filename, ty.span().into_range()))
-                        .with_message(format!("Expected type '{}'", ty.0))
+                        .with_message(format!("Expected type '{}'", ty.inner()))
                         .with_color(Color::Cyan),
                 )
                 .with_label(
@@ -400,7 +400,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_mutation_of_immutable_variable_error(
         &mut self,
         variable: &Spanned<lang::sym::Variable<'src>>,
-        stmt_span: lang::Span,
+        stmt_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
@@ -429,10 +429,10 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_type_mismatch_in_assignment_error(
         &mut self,
         lvalue_ty: &lang::ty::Type,
-        lvalue_span: lang::Span,
+        lvalue_span: Span,
         expr_ty: &lang::ty::Type,
-        expr_span: lang::Span,
-        stmt_span: lang::Span,
+        expr_span: Span,
+        stmt_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
@@ -481,7 +481,7 @@ impl<'src> SemanticDiagnostic<'src> {
         identifier: &Spanned<ast::Identifier<'src>>,
         expected: usize,
         actual: usize,
-        call_span: lang::Span,
+        call_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
@@ -509,8 +509,8 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         param: &lang::sym::Variable<'src>,
         arg: &Spanned<ast::Expr<'src>>,
-        param_span: lang::Span,
-        call_span: lang::Span,
+        param_span: Span,
+        call_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
@@ -542,7 +542,7 @@ impl<'src> SemanticDiagnostic<'src> {
         op: lang::BinaryOp,
         lhs: &Spanned<ast::Expr<'src>>,
         rhs: &Spanned<ast::Expr<'src>>,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -572,7 +572,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_non_boolean_in_conditional_error(
         &mut self,
         expr: &Spanned<ast::Expr<'src>>,
-        stmt_span: lang::Span,
+        stmt_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, stmt_span.into_range()))
@@ -594,7 +594,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_not_all_paths_return_value_error(
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
-        fn_span: lang::Span,
+        fn_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
@@ -607,7 +607,8 @@ impl<'src> SemanticDiagnostic<'src> {
                     ariadne::Label::new((self.filename, fn_span.into_range()))
                         .with_message(format!(
                             "function '{}' must return a value of type '{}'",
-                            proto.ident.name, proto.ret.0
+                            proto.ident.name,
+                            proto.ret.inner()
                         ))
                         .with_color(Color::Red),
                 )
@@ -619,8 +620,8 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_return_value_from_void_function_error(
         &mut self,
-        proto_span: lang::Span,
-        ret_span: lang::Span,
+        proto_span: Span,
+        ret_span: Span,
         expr: &Spanned<ast::Expr<'src>>,
     ) {
         self.errors.push(
@@ -646,7 +647,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_missing_return_expression_error(
         &mut self,
         proto: &Spanned<ast::FunctionPrototype<'src>>,
-        fn_span: lang::Span,
+        fn_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, fn_span.into_range()))
@@ -660,7 +661,8 @@ impl<'src> SemanticDiagnostic<'src> {
                     ariadne::Label::new((self.filename, proto.span().into_range()))
                         .with_message(format!(
                             "function '{}' expects return type '{}'",
-                            proto.ident.name, proto.ret.0
+                            proto.ident.name,
+                            proto.ret.inner()
                         ))
                         .with_color(Color::Cyan),
                 )
@@ -675,7 +677,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when a variable of type void is declared.
     #[cold]
-    pub fn emit_void_variable_declaration_error(&mut self, var_span: lang::Span, var_name: &str) {
+    pub fn emit_void_variable_declaration_error(&mut self, var_span: Span, var_name: &str) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, var_span.into_range()))
                 .with_code(SemanticErrorKind::VoidVariableDeclaration as u32)
@@ -694,7 +696,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_void_function_parameter_error(
         &mut self,
-        param_span: lang::Span,
+        param_span: Span,
         proto: &ast::FunctionPrototype<'src>,
     ) {
         self.errors.push(
@@ -719,7 +721,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_unknown_intrinsic_function_error(
         &mut self,
         identifier: &Spanned<ast::Identifier<'src>>,
-        expr_span: lang::Span,
+        expr_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, expr_span.into_range()))
@@ -774,7 +776,7 @@ impl<'src> SemanticDiagnostic<'src> {
         expected: usize,
         actual: usize,
         or_more: bool,
-        call_span: lang::Span,
+        call_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, call_span.into_range()))
@@ -825,7 +827,7 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_array_type_as_function_return_type_error(
         &mut self,
-        fn_span: lang::Span,
+        fn_span: Span,
         proto: &ast::FunctionPrototype<'src>,
     ) {
         self.errors.push(
@@ -853,7 +855,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         op: lang::BinaryOp,
         ty: &lang::ty::Type,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -877,7 +879,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         op: lang::UnaryOp,
         ty: &lang::ty::Type,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -901,7 +903,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_invalid_assignment_lvalue_error(
         &mut self,
         lvalue: &Spanned<ast::Expr<'src>>,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -925,7 +927,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         field_name: &Spanned<ast::Identifier<'src>>,
         ty: &lang::ty::Type,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
@@ -948,12 +950,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when a struct type is redefined with the same name
     #[cold]
-    pub fn emit_struct_redefinition_error(
-        &mut self,
-        name: &str,
-        current: lang::Span,
-        previous: lang::Span,
-    ) {
+    pub fn emit_struct_redefinition_error(&mut self, name: &str, current: Span, previous: Span) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, current.into_range()))
                 .with_code(SemanticErrorKind::StructRedefinition as u32)
@@ -974,7 +971,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when a struct field is declared with type void.
     #[cold]
-    pub fn emit_void_field_declaration_error(&mut self, var_span: lang::Span, field: &StructField) {
+    pub fn emit_void_field_declaration_error(&mut self, var_span: Span, field: &StructField) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, var_span.into_range()))
                 .with_code(SemanticErrorKind::VoidFieldDeclaration as u32)
@@ -997,7 +994,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when an unknown type is used in a type annotation or declaration.
     #[cold]
-    pub fn emit_unknown_type_error(&mut self, ty_span: lang::Span, ty: &lang::ty::Type) {
+    pub fn emit_unknown_type_error(&mut self, ty_span: Span, ty: &lang::ty::Type) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, ty_span.into_range()))
                 .with_code(SemanticErrorKind::UnknownType as u32)
@@ -1016,8 +1013,8 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_struct_field_redeclaration_error(
         &mut self,
         field_name: &str,
-        current: lang::Span,
-        previous: lang::Span,
+        current: Span,
+        previous: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, current.into_range()))
@@ -1045,8 +1042,8 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_infinite_struct_size_error(
         &mut self,
         struct_name: &str,
-        struct_name_span: lang::Span,
-        field_span: lang::Span,
+        struct_name_span: Span,
+        field_span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, field_span.into_range()))
@@ -1076,7 +1073,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_member_access_expression_is_not_an_lvalue_error(
         &mut self,
         expr: &Spanned<ast::Expr<'src>>,
-        span: lang::Span,
+        span: Span,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))

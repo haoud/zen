@@ -1,4 +1,4 @@
-use lang::Spanned;
+use span::Spanned;
 
 use crate::error::SemanticDiagnostic;
 
@@ -40,9 +40,9 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
 
             match &stmt.kind {
                 ast::StmtKind::If(_, then, or) => {
-                    let then_returns = returns_in_all_paths(&then.0.stmts);
+                    let then_returns = returns_in_all_paths(&then.inner().stmts);
                     let else_returns = if let Some(else_branch) = or {
-                        returns_in_all_paths(&else_branch.0.stmts)
+                        returns_in_all_paths(&else_branch.inner().stmts)
                     } else {
                         false
                     };
@@ -78,9 +78,9 @@ pub fn returns_in_all_paths(stmts: &[Spanned<ast::Stmt<'_>>]) -> bool {
             ast::StmtKind::If(_, then, or) => {
                 // If an branch of the if statement does return, we need to check other branches
                 // to ensure they also return in all paths.
-                let then_returns = returns_in_all_paths(&then.0.stmts);
+                let then_returns = returns_in_all_paths(&then.inner().stmts);
                 let else_returns = if let Some(else_branch) = or {
-                    returns_in_all_paths(&else_branch.0.stmts)
+                    returns_in_all_paths(&else_branch.inner().stmts)
                 } else {
                     false
                 };

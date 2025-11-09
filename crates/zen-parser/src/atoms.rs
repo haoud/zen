@@ -2,10 +2,8 @@
 //! are the simplest forms of expressions that cannot be broken down further, and therefore
 //! serve as the building blocks for more complex expressions.
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{
-    Span, Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
+use span::{Span, Spanned};
 
 use super::ParserError;
 

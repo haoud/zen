@@ -1,9 +1,10 @@
 [package]
-name = "zen-lang"
+name = "zen-span"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-span = { path = "../zen-span", package = "zen-span" }
 chumsky = { workspace = true }
 
+[lints]
+workspace = true

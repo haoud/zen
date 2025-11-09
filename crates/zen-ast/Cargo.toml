@@ -5,3 +5,4 @@ version = "0.1.0"
 
 [dependencies]
 lang = { path = "../zen-lang", package = "zen-lang" }
+span = { path = "../zen-span", package = "zen-span" }

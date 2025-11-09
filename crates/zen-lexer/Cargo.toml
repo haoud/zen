@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 chumsky = { workspace = true }
 lang = { path = "../zen-lang", package = "zen-lang" }
+span = { path = "../zen-span", package = "zen-span" }

@@ -1,6 +1,8 @@
 use std::{collections::HashMap, hash::Hash};
 
-use crate::{BinaryOp, Span, UnaryOp};
+use span::Span;
+
+use crate::{BinaryOp, UnaryOp};
 
 /// The types supported by the language.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

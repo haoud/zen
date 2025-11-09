@@ -9,4 +9,5 @@ chumsky = { workspace = true }
 
 ast = { path = "../zen-ast", package = "zen-ast" }
 lang = { path = "../zen-lang", package = "zen-lang" }
+span = { path = "../zen-span", package = "zen-span" }
 parser = { path = "../zen-parser", package = "zen-parser" }

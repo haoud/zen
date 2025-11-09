@@ -1,4 +1,4 @@
-use lang::Spanned;
+use span::{Span, Spanned};
 
 use crate::SemanticAnalysis;
 
@@ -15,7 +15,7 @@ impl<'src> SemanticAnalysis<'src> {
             self.infer_stmt(stmt);
 
             let stmt_span = stmt.span();
-            match &mut stmt.0.kind {
+            match &mut stmt.kind {
                 ast::StmtKind::Return(expr) => {
                     if let Some(expr) = expr.as_mut() {
                         self.check_expr(expr, false);
@@ -32,7 +32,7 @@ impl<'src> SemanticAnalysis<'src> {
                         }
 
                         // Verify that the return expression type matches the function's return type.
-                        if expr.ty != proto.ret.0 && expr.ty.is_valid() {
+                        if expr.ty != *proto.ret && expr.ty.is_valid() {
                             self.errors.emit_return_type_mismatch_error(
                                 &proto,
                                 expr.span(),
@@ -63,7 +63,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
                     // that should have happened before this semantic check.
-                    if expr.ty != ty.0 {
+                    if expr.ty != **ty {
                         self.errors
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
@@ -166,7 +166,7 @@ impl<'src> SemanticAnalysis<'src> {
         field: &mut Spanned<ast::Identifier<'src>>,
         assign_expr: &mut Spanned<ast::Expr<'src>>,
         assign_op: Option<lang::BinaryOp>,
-        stmt_span: lang::Span,
+        stmt_span: Span,
         recursion: bool,
     ) {
         self.check_expr(lvalue, false);
@@ -228,8 +228,8 @@ impl<'src> SemanticAnalysis<'src> {
         assign_ident: &Spanned<ast::Identifier<'src>>,
         assign_ty: &lang::ty::Type,
         assign_op: Option<lang::BinaryOp>,
-        assign_span: lang::Span,
-        stmt_span: lang::Span,
+        assign_span: Span,
+        stmt_span: Span,
         field_access: bool,
     ) {
         // If the variable does not exist, report an undefined variable error
@@ -268,7 +268,7 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, *mutable);
+                self.infer_let_var(ident, expr, &mut *ty, span, *mutable);
             }
             ast::StmtKind::Assign(_, lvalue, expr) => {
                 self.infer_expr(lvalue);
@@ -307,7 +307,7 @@ impl<'src> SemanticAnalysis<'src> {
         ident: &ast::Identifier<'src>,
         expr: &mut Spanned<ast::Expr<'src>>,
         ty: &mut lang::ty::Type,
-        span: lang::Span,
+        span: Span,
         mutable: bool,
     ) {
         // Infer the type of the expression if it is not already known.

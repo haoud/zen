@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 lang = { path = "../zen-lang", package = "zen-lang" }
+span = { path = "../zen-span", package = "zen-span" }
 ast = { path = "../zen-ast", package = "zen-ast" }

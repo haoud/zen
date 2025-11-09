@@ -1,4 +1,4 @@
-use {crate::error::SemanticDiagnostic, ast, lang::Spanned};
+use {crate::error::SemanticDiagnostic, ast, span::Spanned};
 
 /// The scope stack for managing variable and function declarations.
 #[derive(Debug, Clone)]
@@ -136,16 +136,16 @@ impl<'src> Scope<'src> {
         errors: &mut SemanticDiagnostic<'src>,
         func: &Spanned<ast::Function<'src>>,
     ) {
-        if let Some(function) = self.get_function(func.0.prototype.ident.name) {
+        if let Some(function) = self.get_function(func.inner().prototype.ident.name) {
             errors.emit_function_redefinition_error(
-                &func.0.prototype,
+                &func.inner().prototype,
                 function.span(),
                 func.span(),
             );
         } else {
             // Convert the function parameters to variable symbols.
             let params = func
-                .0
+                .inner()
                 .prototype
                 .params
                 .iter()
@@ -154,7 +154,7 @@ impl<'src> Scope<'src> {
                         lang::sym::Variable {
                             mutable: param.mutable,
                             name: param.ident.name,
-                            ty: param.ty.0.clone(),
+                            ty: param.ty.inner().clone(),
                         },
                         param.span(),
                     )
@@ -165,8 +165,8 @@ impl<'src> Scope<'src> {
                 .symbols_mut()
                 .insert_function(Spanned::new(
                     lang::sym::Function {
-                        name: func.0.prototype.ident.name,
-                        ret: func.0.prototype.ret.0.clone(),
+                        name: func.inner().prototype.ident.name,
+                        ret: func.inner().prototype.ret.inner().clone(),
                         params,
                     },
                     func.span(),

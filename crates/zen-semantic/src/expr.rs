@@ -1,5 +1,5 @@
 use crate::SemanticAnalysis;
-use lang::Spanned;
+use span::Spanned;
 
 impl<'src> SemanticAnalysis<'src> {
     /// Check an expression for semantic correctness, returning any errors found.

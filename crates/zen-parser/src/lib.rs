@@ -1,9 +1,7 @@
 use ast::TopLevelItemKind;
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{
-    Span, Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
+use span::{Span, Spanned};
 
 pub mod atoms;
 
@@ -598,7 +596,10 @@ where
         )
         .then_ignore(just(lexer::Token::Delimiter("]")))
         .map_with(|(ty, count), e| {
-            Spanned::new(lang::ty::Type::Array(Box::new(ty.0), count), e.span())
+            Spanned::new(
+                lang::ty::Type::Array(Box::new(ty.into_inner()), count),
+                e.span(),
+            )
         });
 
     choice((strct, array, atoms::builtin_type_parser())).boxed()

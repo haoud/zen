@@ -1,7 +1,5 @@
-use lang::{
-    Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
+use span::Spanned;
 
 use crate::c::Codegen;
 
@@ -19,7 +17,7 @@ impl Codegen<'_> {
                 ast::ExprKind::List(items) => {
                     let elements = items
                         .iter()
-                        .map(|item| self.generate_fmt_args(&item.0))
+                        .map(|item| self.generate_fmt_args(&item.inner()))
                         .collect::<Vec<String>>()
                         .join(", ");
                     format!("{}", elements)
@@ -27,14 +25,16 @@ impl Codegen<'_> {
                 ast::ExprKind::Identifier(ident) => match **ty {
                     Type::Builtin(BuiltinType::Bool) => {
                         let elements = (0..*size)
-                            .map(|i| Self::emit_bool_to_str(&format!("{}[{}]", ident.name, i)))
+                            .map(|i| {
+                                Self::emit_bool_to_str(&format!("{}[{}]", ident.inner().name, i))
+                            })
                             .collect::<Vec<String>>()
                             .join(", ");
                         return format!("{}", elements);
                     }
                     _ => {
                         let elements = (0..*size)
-                            .map(|i| format!("{}[{}]", ident.name, i))
+                            .map(|i| format!("{}[{}]", ident.inner().name, i))
                             .collect::<Vec<String>>()
                             .join(", ");
                         return format!("{}", elements);
@@ -80,7 +80,7 @@ pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
         if c == '{' && chars.peek() == Some(&'}') {
             // Consume the closing '}' and add the appropriate format specifier
             // to the result string
-            result.push_str(&get_fmt_specifier(&args[idx].ty));
+            result.push_str(&get_fmt_specifier(&args[idx].inner().ty));
             chars.next();
             idx += 1;
         } else if c == '%' {

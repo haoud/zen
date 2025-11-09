@@ -1,16 +1,17 @@
-use lang::{self, BinaryOp, Span, Spanned, UnaryOp, ty::Type};
+use lang::{self, BinaryOp, UnaryOp, ty::Type};
+use span::{Span, Spanned};
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,
 /// and underscores that start with a letter or an underscore.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier<'src> {
     /// The name of the identifier.
     pub name: &'src str,
 }
 
 /// A literal value.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Literal<'src> {
     /// The value of the literal. For now, literals are only integers and are
     /// stored as 64-bit unsigned integers in the AST, allowing some indesirable
@@ -25,13 +26,13 @@ pub struct Literal<'src> {
 
 /// A top-level item in a program. Top-level items are the main building
 /// blocks of a program. They can be function definitions or struct definitions.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct TopLevelItem<'src> {
     pub kind: TopLevelItemKind<'src>,
 }
 
 /// Different kinds of top-level items supported by the language.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub enum TopLevelItemKind<'src> {
     /// A function definition.
     Function(Spanned<Function<'src>>),
@@ -42,7 +43,7 @@ pub enum TopLevelItemKind<'src> {
 
 /// A struct. Structs are used to define custom data types that group
 /// together related data.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Struct<'src> {
     /// The identifier of the struct.
     pub ident: Spanned<Identifier<'src>>,
@@ -53,7 +54,7 @@ pub struct Struct<'src> {
 
 /// A field in a struct. Struct fields are used to define the members
 /// of a struct.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct StructField<'src> {
     /// The identifier of the field.
     pub ident: Spanned<Identifier<'src>>,
@@ -66,7 +67,7 @@ pub struct StructField<'src> {
 /// They can be called from other functions or from the entry point of
 /// the program. Functions can have a return type and a body that contains
 /// a list of expressions that are evaluated when the function is called.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Function<'src> {
     /// The prototype of the function. The prototype contains the name of
     /// the function, the list of parameters that the function takes, and
@@ -83,7 +84,7 @@ pub struct Function<'src> {
 /// are used to declare functions before they are defined. This allows functions
 /// to be called before they are defined, which is useful when functions call
 /// each other interdependently.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct FunctionPrototype<'src> {
     /// The name of the function.
     pub ident: Spanned<Identifier<'src>>,
@@ -98,7 +99,7 @@ pub struct FunctionPrototype<'src> {
 /// A function parameter. Function parameters are used to define the parameters that
 /// a function takes. Each parameter is represented by an identifier and a type, and
 /// can be marked as mutable if the parameter can be modified within the function body.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct FunctionParameter<'src> {
     pub ident: Spanned<Identifier<'src>>,
     pub ty: Spanned<Type>,
@@ -109,7 +110,7 @@ pub struct FunctionParameter<'src> {
 /// used in function bodies, conditional statements, and loops. Blocks can also have a return
 /// type, which is the type of the last expression in the block. If the block does not have a
 /// return type, it is considered to have a return type of `void`.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Block<'src> {
     /// A list of statements that make up the block.
     pub stmts: Vec<Spanned<Stmt<'src>>>,
@@ -121,14 +122,14 @@ pub struct Block<'src> {
 
 /// A statement. Statements are fragments of code that are executed in
 /// sequence in a program.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Stmt<'src> {
     /// The kind of statement.
     pub kind: StmtKind<'src>,
 }
 
 /// Different kinds of statements supported by the language.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub enum StmtKind<'src> {
     /// A return statement. The element is an optional expression that is being
     /// returned from the function. If no expression is provided, the expression
@@ -184,7 +185,7 @@ pub enum StmtKind<'src> {
 /// can be used in other expressions or statements. Expressions that
 /// do not produce a value are called statements (e.g. `let x = 1;`)
 /// and are different from expressions that produce a value (e.g. `1 + 2`).
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Expr<'src> {
     /// The kind of expression.
     pub kind: ExprKind<'src>,
@@ -194,7 +195,7 @@ pub struct Expr<'src> {
 }
 
 /// Different kinds of expressions supported by the language.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub enum ExprKind<'src> {
     /// A boolean value.
     Bool(Spanned<bool>),
@@ -244,7 +245,7 @@ impl ExprKind<'_> {
     #[must_use]
     pub fn as_string_literal(&self) -> Option<&str> {
         if let ExprKind::String(s) = self {
-            Some(s.0.as_str())
+            Some(s.inner().as_str())
         } else {
             None
         }
@@ -255,7 +256,7 @@ impl ExprKind<'_> {
     #[must_use]
     pub fn as_literal(&self) -> Option<&Literal<'_>> {
         if let ExprKind::Literal(lit) = self {
-            Some(&lit.0)
+            Some(&lit.inner())
         } else {
             None
         }

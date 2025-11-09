@@ -105,7 +105,7 @@ fn translate(args: &clap::ArgMatches) {
                 tokens
                     .as_slice()
                     .map((program.len()..program.len()).into(), |spanned| {
-                        (&spanned.0, &spanned.1)
+                        spanned.as_tuple()
                     }),
             )
             .into_output_errors()
