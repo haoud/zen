@@ -84,6 +84,7 @@ impl<'src> SemanticAnalysis<'src> {
             );
         } else {
             // Collect field types and check for redeclarations
+            let mut fields_order = Vec::new();
             let mut fields = HashMap::new();
             let span = structure.span();
 
@@ -101,13 +102,18 @@ impl<'src> SemanticAnalysis<'src> {
                     );
                 } else {
                     fields.insert(field.ident.name.to_owned(), field.ty.inner().clone());
+                    fields_order.push(field.ident.name.to_owned());
                 }
             }
 
             // Insert the struct metadata into the type table
             self.types.insert_struct(
                 structure.ident.name.to_string(),
-                StructMetadata { fields, span },
+                StructMetadata {
+                    fields_order,
+                    fields,
+                    span,
+                },
             );
         }
     }

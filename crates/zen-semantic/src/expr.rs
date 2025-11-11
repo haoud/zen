@@ -6,7 +6,7 @@ impl<'src> SemanticAnalysis<'src> {
     pub fn check_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>, negated: bool) {
         let span = expr.span();
 
-        self.infer_expr(expr);
+        self.infer_expr(expr, None);
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 self.check_expr(lhs, false);
@@ -182,20 +182,6 @@ impl<'src> SemanticAnalysis<'src> {
                 for item in items.iter_mut() {
                     self.check_expr(item, false);
                 }
-
-                // Check for incompatible types in the initializer list
-                if let Some(first) = items.first() {
-                    // TODO: Currently, we consider that the first item's type is the expected type
-                    // for the entire list. In the future, we may want to find the expected type for
-                    // the list from the context in which it is used (e.g., variable declaration
-                    // type, function parameter type, etc.).
-                    for item in items.iter() {
-                        if item.ty != first.ty && item.ty.is_valid() {
-                            self.errors
-                                .emit_incompatible_types_in_initializer_list_error(item, &first.ty);
-                        }
-                    }
-                }
             }
             ast::ExprKind::FieldAccess(_, _) => {
                 // Not sure if any specific checks are needed here since type inference already
@@ -220,17 +206,22 @@ impl<'src> SemanticAnalysis<'src> {
     /// This function will panic if it encounters an `ast::ExprKind::Error`, as such expressions
     /// should not appear during type inference, or if an expression's type is still `Infer` but
     /// should have been determined during parsing (e.g., string or boolean literals).
-    pub fn infer_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>) {
+    pub fn infer_expr(
+        &mut self,
+        expr: &mut Spanned<ast::Expr<'src>>,
+        target: Option<&lang::ty::Type>,
+    ) {
         // The expression's type is already known, so no inference is needed.
         if expr.ty != lang::ty::Type::Infer {
             return;
         }
 
+        let span = expr.span();
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 // Recursively infer types of the left and right expressions if needed.
-                self.infer_expr(lhs);
-                self.infer_expr(rhs);
+                self.infer_expr(lhs, None);
+                self.infer_expr(rhs, None);
 
                 match op {
                     lang::BinaryOp::And
@@ -262,7 +253,7 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
-                self.infer_expr(rhs);
+                self.infer_expr(rhs, None);
                 match op {
                     lang::UnaryOp::Neg => {
                         // Recursively infer the type of the inner expression if needed.
@@ -277,7 +268,7 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::FunctionCall(ident, args) => {
                 // Recursively infer types of each argument expression.
                 for argument in args {
-                    self.infer_expr(argument);
+                    self.infer_expr(argument, None);
                 }
 
                 if let Some(func) = self.scopes.get_function(ident.name) {
@@ -306,7 +297,7 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::IntrinsicCall(identifier, args) => {
                 // Recursively infer types of each argument expression.
                 for argument in args {
-                    self.infer_expr(argument);
+                    self.infer_expr(argument, None);
                 }
 
                 match identifier.name {
@@ -319,26 +310,33 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::ExprKind::List(items) => {
-                // Recursively infer types for each item in the list.
-                for item in items.iter_mut() {
-                    self.infer_expr(item);
-                }
-
-                // If all items are of the same type, the list type is that type. Otherwise, we
-                // set it to `Unknown` to indicate a type inference failure.
-                if let Some(first) = items.first() {
-                    if items.iter().all(|item| item.ty == first.ty) {
-                        expr.ty =
-                            lang::ty::Type::Array(Box::new(first.ty.clone()), items.len() as u64);
-                    } else {
-                        expr.ty = lang::ty::Type::Unknown;
-                    }
+                if let Some(target) = target {
+                    // Try to infer the list item types based on the target type.
+                    let inferred_type = self.infer_list_items(items, target, span);
+                    expr.ty = inferred_type;
                 } else {
-                    todo!("Implement empty list type inference");
+                    // Recursively infer types for each item in the list.
+                    for item in items.iter_mut() {
+                        self.infer_expr(item, None);
+                    }
+
+                    // If all items are of the same type, the list type is an array of that type.
+                    if let Some(first) = items.first() {
+                        if items.iter().all(|item| item.ty == first.ty) {
+                            expr.ty = lang::ty::Type::Array(
+                                Box::new(first.ty.clone()),
+                                items.len() as u64,
+                            );
+                        } else {
+                            expr.ty = lang::ty::Type::Unknown;
+                        }
+                    } else {
+                        todo!("Implement empty list type inference");
+                    }
                 }
             }
             ast::ExprKind::FieldAccess(expression, field) => {
-                self.infer_expr(expression);
+                self.infer_expr(expression, None);
 
                 // If the base expression's type is invalid, we cannot proceed with field access
                 // inference, so we set the expression's type to `Unknown` and return early. We
@@ -378,5 +376,116 @@ impl<'src> SemanticAnalysis<'src> {
                 unreachable!("Error expressions should not appear during type inference")
             }
         }
+    }
+
+    /// Try to infer list item types to match the target type. If successful, return the inferred
+    /// type. If not, return `Unknown`.
+    pub fn infer_list_items(
+        &mut self,
+        items: &mut [Spanned<ast::Expr<'src>>],
+        target: &lang::ty::Type,
+        span: lang::Span,
+    ) -> lang::ty::Type {
+        match target {
+            lang::ty::Type::Array(ty, len) => {
+                // If the target type is an array, we can infer the item types based on the
+                // array's element type and length.
+                let mut same_length = true;
+                let mut same_type = true;
+
+                // Check if the length of the initializer list matches the target array length.
+                if items.len() as u64 != *len {
+                    same_length = false;
+                }
+
+                // Infer each item's type to be the array's element type and check for type
+                // compatibility.
+                for item in items.iter_mut() {
+                    self.infer_expr(item, Some(ty));
+                    if item.ty != **ty && item.ty.is_valid() {
+                        self.errors
+                            .emit_incompatible_types_in_initializer_list_error(item, &ty);
+                        same_type = false;
+                    }
+                }
+
+                // If all items have the same type and the length matches, we can return the array
+                // type. If only the types match, we return an array type with the length of the
+                // initializer to avoid losing information, but this will not pass type checking
+                // later.
+                if same_type {
+                    if same_length {
+                        return lang::ty::Type::Array(ty.clone(), *len);
+                    } else {
+                        return lang::ty::Type::Array(ty.clone(), items.len() as u64);
+                    }
+                }
+
+                return lang::ty::Type::Unknown;
+            }
+            lang::ty::Type::Struct(name) => {
+                // If the target type is a structure, we can infer the item types based on the
+                // structure's field types.
+                if let Some(structure) = self.types.get_struct_metadata(name).cloned() {
+                    let mut right_length = true;
+                    let mut right_type = true;
+
+                    for (item, i) in items.iter_mut().zip(&structure.fields_order) {
+                        let field_type = structure
+                            .fields
+                            .get(i)
+                            .expect("Field type should exist for field name");
+                        self.infer_expr(item, Some(field_type));
+                        if item.ty != *field_type {
+                            self.errors
+                                .emit_incompatible_types_in_initializer_list_error(
+                                    item, field_type,
+                                );
+                            right_type = false;
+                        }
+                    }
+
+                    // If the number of items does not match the number of fields, emit an error,
+                    // because this is probably not what the developer intended. C allows this by
+                    // default, and I think it is a very bad idea.
+                    if items.len() != structure.fields.len() {
+                        self.errors.emit_count_mismatch_in_initializer_list_error(
+                            structure.fields.len(),
+                            items.len(),
+                            span,
+                        );
+                        right_length = false;
+                    }
+
+                    if right_type && right_length {
+                        return target.clone();
+                    }
+                }
+            }
+            lang::ty::Type::Builtin(ty) => {
+                // For built-in types, we can only infer the item type if there is exactly one item
+                // in the list. We infer that item's type to be the built-in type and check if it
+                // matches the target type.
+                if let Some(item) = items.first_mut() {
+                    self.infer_expr(item, Some(&lang::ty::Type::Builtin(*ty)));
+                    if item.ty == *target {
+                        if items.len() == 1 {
+                            return target.clone();
+                        } else {
+                            self.errors.emit_count_mismatch_in_initializer_list_error(
+                                1,
+                                items.len(),
+                                span,
+                            );
+                        }
+                    }
+                }
+            }
+            lang::ty::Type::Infer | lang::ty::Type::Unknown => {
+                // If the target type is `Infer` or `Unknown`, we cannot infer item types, so we
+                // skip inference for each item.
+            }
+        }
+        lang::ty::Type::Unknown
     }
 }

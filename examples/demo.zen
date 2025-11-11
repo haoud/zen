@@ -8,15 +8,11 @@ struct metadata {
     size: int,
 }
 
-int init_data(mut data: struct data) {
-    data.metadata.alignment = 8;
-    data.metadata.size += 16;
-    data.value = false;
-
-    return data.metadata.size;
-}
-
 // A simple Zen program
 int main() {
+    let value : int = { 1 };
+    let data : struct data = { {8, 32}, true };
+    var copy : struct data = { {8, 32}, true };
+    //let array : bool[3] = { data.value, copy.value, false };
     return 0;
 }

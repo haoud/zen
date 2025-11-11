@@ -63,7 +63,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
                     // that should have happened before this semantic check.
-                    if expr.ty != ty.0 {
+                    if expr.ty != ty.0 && expr.ty.is_valid() {
                         self.errors
                             .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
                     }
@@ -264,18 +264,18 @@ impl<'src> SemanticAnalysis<'src> {
         match &mut stmt.kind {
             ast::StmtKind::Return(expr) => {
                 if let Some(expr) = expr.as_mut() {
-                    self.infer_expr(expr);
+                    self.infer_expr(expr, None);
                 }
             }
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
-                self.infer_let_var(ident, expr, &mut ty.0, span, *mutable);
+                self.infer_let_var(ident, expr, ty, span, *mutable);
             }
             ast::StmtKind::Assign(_, lvalue, expr) => {
-                self.infer_expr(lvalue);
-                self.infer_expr(expr);
+                self.infer_expr(lvalue, None);
+                self.infer_expr(expr, None);
             }
             ast::StmtKind::If(cond, then, or) => {
-                self.infer_expr(cond);
+                self.infer_expr(cond, None);
                 for stmt in &mut then.stmts {
                     self.infer_stmt(stmt);
                 }
@@ -286,13 +286,13 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::StmtKind::While(cond, body) => {
-                self.infer_expr(cond);
+                self.infer_expr(cond, None);
                 for stmt in &mut body.stmts {
                     self.infer_stmt(stmt);
                 }
             }
             ast::StmtKind::Expr(expr) => {
-                self.infer_expr(expr);
+                self.infer_expr(expr, None);
             }
             ast::StmtKind::Error(_) => unreachable!(),
         }
@@ -306,14 +306,23 @@ impl<'src> SemanticAnalysis<'src> {
         &mut self,
         ident: &ast::Identifier<'src>,
         expr: &mut Spanned<ast::Expr<'src>>,
-        ty: &mut lang::ty::Type,
+        ty: &mut Spanned<lang::ty::Type>,
         span: lang::Span,
         mutable: bool,
     ) {
+        // Verify that the type exists if it is a user-defined type.
+        if let lang::ty::Type::Struct(name) = &ty.0 {
+            if !self.types.struct_exists(name) {
+                self.errors.emit_unknown_type_error(ty.span(), ty);
+            }
+        }
+
         // Infer the type of the expression if it is not already known.
-        if *ty == lang::ty::Type::Infer {
-            self.infer_expr(expr);
-            *ty = expr.ty.clone();
+        if ty.0 == lang::ty::Type::Infer {
+            self.infer_expr(expr, None);
+            ty.0 = expr.ty.clone();
+        } else {
+            self.infer_expr(expr, Some(&mut ty.0));
         }
 
         // Insert the new variable into the current scope. If a variable with the same
@@ -323,7 +332,7 @@ impl<'src> SemanticAnalysis<'src> {
             Spanned::new(
                 lang::sym::Variable {
                     name: ident.name,
-                    ty: ty.clone(),
+                    ty: ty.0.clone(),
                     mutable,
                 },
                 span,

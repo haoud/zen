@@ -153,6 +153,9 @@ pub enum SemanticErrorKind {
     /// Attempted to use a member access expression that is not an lvalue on the left-hand side of
     /// an assignment.
     MemberAccessExpressionIsNotAnLValueInAssignment = 43,
+
+    /// The number of elements in an initializer list does not match the expected count.
+    CountMismatchInInitializerList = 44,
 }
 
 impl From<SemanticErrorKind> for u32 {
@@ -1092,6 +1095,31 @@ impl<'src> SemanticDiagnostic<'src> {
                             "This expression of type '{}' cannot be assigned to",
                             expr.ty
                         ))
+                        .with_color(Color::Red),
+                )
+                .finish(),
+        );
+    }
+
+    /// Emit an error when the number of elements in an initializer list does not match
+    /// the expected amount.
+    #[cold]
+    pub fn emit_count_mismatch_in_initializer_list_error(
+        &mut self,
+        expected_count: usize,
+        actual_count: usize,
+        span: lang::Span,
+    ) {
+        self.errors.push(
+            ariadne::Report::build(ReportKind::Error, (self.filename, span.into_range()))
+                .with_code(SemanticErrorKind::CountMismatchInInitializerList as u32)
+                .with_message(format!(
+                    "initializer list has {} elements but {} were expected",
+                    actual_count, expected_count
+                ))
+                .with_label(
+                    ariadne::Label::new((self.filename, span.into_range()))
+                        .with_message("initializer list here")
                         .with_color(Color::Red),
                 )
                 .finish(),

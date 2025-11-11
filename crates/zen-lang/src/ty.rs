@@ -236,6 +236,10 @@ pub trait TypeMetadata {
 //// Metadata for struct types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructMetadata {
+    /// A mapping from field order (index) to field names. This is useful for maintaining the order
+    /// of fields as they were defined in the struct.
+    pub fields_order: Vec<String>,
+
     /// A mapping from field names to their types.
     pub fields: HashMap<String, Type>,
 
@@ -246,8 +250,22 @@ pub struct StructMetadata {
 impl StructMetadata {
     /// Create a new `StructMetadata` with the given fields.
     #[must_use]
-    pub fn new(fields: HashMap<String, Type>, span: Span) -> Self {
-        Self { fields, span }
+    pub fn new(fields_order: Vec<String>, fields: HashMap<String, Type>, span: Span) -> Self {
+        Self {
+            fields_order,
+            fields,
+            span,
+        }
+    }
+
+    /// Get the type of a field by its index. Returns `None` if the index is out of bounds.
+    #[must_use]
+    pub fn get_field_type_by_index(&self, index: usize) -> Option<&Type> {
+        if let Some(field_name) = self.fields_order.get(index) {
+            self.fields.get(field_name)
+        } else {
+            None
+        }
     }
 
     /// Get the type of a field by its name. Returns `None` if the field does not exist.
