@@ -21,7 +21,7 @@ members = [
   "crates/zen-lang",
   "crates/zen-lexer",
   "crates/zen-parser",
-  "crates/zen-semantic",
+  "crates/zen-semantic", "crates/zen-span",
 ]
 
 [workspace.dependencies]

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::c::scope::Scope;
-use lang::{Spanned, ty::TypeTable};
+use lang::ty::TypeTable;
 
 pub mod intrinsic;
 pub mod scope;
@@ -204,11 +204,7 @@ impl<'a> Codegen<'a> {
     /// This function ensures that any field that use an structure are generated before being used
     /// to avoid using an incomplete type in C that would lead to compilation errors.
     /// If the struct has already been defined, this function will not generate the struct again.
-    pub fn generate_struct(
-        &mut self,
-        structures: &'a [Spanned<ast::TopLevelItem>],
-        strct: &'a ast::Struct,
-    ) {
+    pub fn generate_struct(&mut self, structures: &'a [ast::TopLevelItem], strct: &'a ast::Struct) {
         // If the struct has already been defined, we skip the generation.
         if self.defined_structs.contains(&strct.ident.name) {
             return;
@@ -329,7 +325,7 @@ impl<'a> Codegen<'a> {
         match &expr.kind {
             ast::ExprKind::Identifier(identifier) => identifier.name.to_string(),
             ast::ExprKind::Literal(literal) => format!("{}", literal.value),
-            ast::ExprKind::String(s) => format!("\"{}\"", s.0),
+            ast::ExprKind::String(s) => format!("\"{}\"", s),
             ast::ExprKind::FieldAccess(expr, field) => {
                 let expr = self.generate_expr(expr, false);
                 format!("{}.{}", expr, field.name)
@@ -350,7 +346,7 @@ impl<'a> Codegen<'a> {
                 format!("{} {{{}}}", compound_prefix, items)
             }
             ast::ExprKind::Bool(b) => {
-                if b.0 {
+                if *b {
                     "true".to_string()
                 } else {
                     "false".to_string()
@@ -479,7 +475,7 @@ impl TypeInfo {
 /// code generator, generate the function prototypes and bodies, and return the generated
 /// C code as a string.
 #[must_use]
-pub fn generate(program: &[lang::Spanned<ast::TopLevelItem>], types: TypeTable) -> String {
+pub fn generate(program: &[ast::TopLevelItem], types: TypeTable) -> String {
     let mut codegen = Codegen::new(types);
     codegen.generate_comment_header();
     codegen.generate_includes();

@@ -2,10 +2,8 @@
 //! are the simplest forms of expressions that cannot be broken down further, and therefore
 //! serve as the building blocks for more complex expressions.
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{
-    Span, Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
+use span::{Span, Spanned};
 
 use super::ParserError;
 
@@ -13,18 +11,17 @@ use super::ParserError;
 /// numeric tokens and constructs `ast::Literal` instances representing integer literals.
 #[must_use]
 pub fn number_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Literal<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, ast::Literal<'src>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::Number(val) = e => Spanned::new(
+        lexer::Token::Number(val) = e =>
             ast::Literal {
                 ty: Type::Builtin(BuiltinType::Int),
                 value: val,
+                span: e.span(),
             },
-            e.span()
-        )
     }
 }
 
@@ -32,12 +29,12 @@ where
 /// represents a name in the language. Identifiers are used to name variables, functions, types...
 #[must_use]
 pub fn identifier_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Identifier<'src>>, ParserError<'tokens, 'src>> + Clone
+-> impl Parser<'tokens, I, ast::Identifier<'src>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::Identifier(name) = e => Spanned::new(ast::Identifier { name }, e.span())
+        lexer::Token::Identifier(name) = e => ast::Identifier { name, span: e.span() }
     }
 }
 
@@ -45,25 +42,23 @@ where
 /// `false`, which represent the two possible values of the boolean type.
 #[must_use]
 pub fn boolean_value_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>> + Clone
+-> impl Parser<'tokens, I, ast::Expr<'src>, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::Keyword("true") = e => Spanned::new(
+        lexer::Token::Keyword("true") = e =>
             ast::Expr {
-                kind: ast::ExprKind::Bool(Spanned::new(true, e.span())),
+                kind: ast::ExprKind::Bool(true),
                 ty: Type::Builtin(BuiltinType::Bool),
+                span: e.span(),
             },
-            e.span()
-        ),
-        lexer::Token::Keyword("false") = e => Spanned::new(
+        lexer::Token::Keyword("false") = e =>
             ast::Expr {
-                kind: ast::ExprKind::Bool(Spanned::new(false, e.span())),
+                kind: ast::ExprKind::Bool(false),
                 ty: Type::Builtin(BuiltinType::Bool),
+                span: e.span(),
             },
-            e.span()
-        ),
     }
 }
 
@@ -84,15 +79,15 @@ where
 }
 
 /// A parser for string literals in the language. String literals are sequences of characters
-/// enclosed in double quotes.
+/// enclosed in double quotes. This parser returns only the string value, without span information.
 #[must_use]
-pub fn string_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<String>, ParserError<'tokens, 'src>> + Clone
+pub fn string_value_parser<'tokens, 'src: 'tokens, I>()
+-> impl Parser<'tokens, I, String, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::String(s) = e => Spanned::new(s, e.span())
+        lexer::Token::String(s) => s
     }
 }
 

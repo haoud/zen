@@ -1,9 +1,7 @@
 use ast::TopLevelItemKind;
 use chumsky::{input::ValueInput, prelude::*};
-use lang::{
-    Span, Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
+use span::{Span, Spanned};
 
 pub mod atoms;
 
@@ -15,7 +13,7 @@ type ParserError<'tokens, 'src> = extra::Err<Rich<'tokens, lexer::Token<'src>, S
 /// top-level items that can be interleaved in any order.
 #[must_use]
 pub fn file_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Vec<Spanned<ast::TopLevelItem<'src>>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, Vec<ast::TopLevelItem<'src>>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
@@ -23,7 +21,10 @@ where
         func_parser().map(|sp| TopLevelItemKind::Function(sp)),
         struct_parser().map(|sp| TopLevelItemKind::Struct(sp)),
     ))
-    .map_with(|item, e| Spanned::new(ast::TopLevelItem { kind: item }, e.span()))
+    .map_with(|item, e| ast::TopLevelItem {
+        kind: item,
+        span: e.span(),
+    })
     .repeated()
     .collect()
 }
@@ -33,7 +34,7 @@ where
 /// a body (a list of statements).
 #[must_use]
 pub fn struct_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Struct<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, ast::Struct<'src>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
@@ -41,7 +42,11 @@ where
     let field = atoms::identifier_parser()
         .then_ignore(just(lexer::Token::Delimiter(":")))
         .then(type_parser())
-        .map_with(|(name, ty), e| Spanned::new(ast::StructField { ident: name, ty }, e.span()));
+        .map_with(|(name, ty), e| ast::StructField {
+            ident: name,
+            ty,
+            span: e.span(),
+        });
 
     // A parser for a list of fields, which are field definitions separated by commas and
     // enclosed in curly braces. We allow a trailing comma after the last field for convenience.
@@ -59,14 +64,10 @@ where
     just(lexer::Token::Keyword("struct"))
         .ignore_then(atoms::identifier_parser())
         .then(fields)
-        .map_with(|(name, fields), e| {
-            Spanned::new(
-                ast::Struct {
-                    ident: name,
-                    fields,
-                },
-                e.span(),
-            )
+        .map_with(|(name, fields), e| ast::Struct {
+            ident: name,
+            fields,
+            span: e.span(),
         })
         .boxed()
 }
@@ -76,7 +77,7 @@ where
 /// a body (a list of statements).
 #[must_use]
 pub fn func_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Function<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, ast::Function<'src>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
@@ -87,15 +88,11 @@ where
         .then(atoms::identifier_parser())
         .then_ignore(just(lexer::Token::Delimiter(":")))
         .then(type_parser())
-        .map_with(|((mutable, name), ty), e| {
-            Spanned::new(
-                ast::FunctionParameter {
-                    mutable: mutable.is_some(),
-                    ident: name,
-                    ty,
-                },
-                e.span(),
-            )
+        .map_with(|((mutable, name), ty), e| ast::FunctionParameter {
+            mutable: mutable.is_some(),
+            ident: name,
+            span: e.span(),
+            ty,
         })
         .separated_by(just(lexer::Token::Delimiter(",")))
         .collect();
@@ -106,21 +103,21 @@ where
             just(lexer::Token::Delimiter("(")),
             just(lexer::Token::Delimiter(")")),
         ))
-        .map_with(|((ty, name), params), e| {
-            Spanned::new(
-                ast::FunctionPrototype {
-                    ident: name,
-                    ret: ty,
-                    params,
-                },
-                e.span(),
-            )
+        .map_with(|((ty, name), params), e| ast::FunctionPrototype {
+            ident: name,
+            ret: ty,
+            params,
+            span: e.span(),
         })
         .then(stmt_parser().repeated().collect().delimited_by(
             just(lexer::Token::Delimiter("{")),
             just(lexer::Token::Delimiter("}")),
         ))
-        .map_with(|(prototype, body), e| Spanned::new(ast::Function { prototype, body }, e.span()))
+        .map_with(|(prototype, body), e| ast::Function {
+            prototype,
+            body,
+            span: e.span(),
+        })
 }
 
 /// A parser for statements in the language. Currently, the only statement that is supported
@@ -128,7 +125,7 @@ where
 /// declarations, variable assignments, if statements, while loops...
 #[must_use]
 pub fn stmt_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Stmt<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, ast::Stmt<'src>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
@@ -144,27 +141,19 @@ where
                 just(lexer::Token::Delimiter("{")),
                 just(lexer::Token::Delimiter("}")),
             )
-            .map_with(|stmts, e| {
-                Spanned::new(
-                    ast::Block {
-                        stmts,
-                        ty: lang::ty::Type::Infer,
-                    },
-                    e.span(),
-                )
+            .map_with(|stmts, e| ast::Block {
+                stmts,
+                ty: lang::ty::Type::Infer,
+                span: e.span(),
             });
 
         // Parse a `return` statement, which is an expression of the form `return <expr>;`
         let return_expr = just(lexer::Token::Keyword("return"))
             .ignore_then(expr_parser().or_not())
             .then_ignore(just(lexer::Token::Delimiter(";")))
-            .map_with(|expr, e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::Return(Box::new(expr)),
-                    },
-                    e.span(),
-                )
+            .map_with(|expr, e| ast::Stmt {
+                kind: ast::StmtKind::Return(Box::new(expr)),
+                span: e.span(),
             });
 
         // Parse a `let` statement, which is of the form `let <ident> [: <type>] = <expr>;`. The
@@ -177,18 +166,14 @@ where
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
             .then_ignore(just(lexer::Token::Delimiter(";")))
-            .map_with(|((ident, ty), expr), e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::Var(
-                            ident,
-                            ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
-                            Box::new(expr),
-                            false,
-                        ),
-                    },
-                    e.span(),
-                )
+            .map_with(|((ident, ty), expr), e| ast::Stmt {
+                kind: ast::StmtKind::Var(
+                    ident,
+                    ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
+                    Box::new(expr),
+                    false,
+                ),
+                span: e.span(),
             });
 
         // Parse a `var` statement, which is of the form `var <ident> [: <type>] = <expr>;`
@@ -201,18 +186,14 @@ where
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
             .then_ignore(just(lexer::Token::Delimiter(";")))
-            .map_with(|((ident, ty), expr), e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::Var(
-                            ident,
-                            ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
-                            Box::new(expr),
-                            true,
-                        ),
-                    },
-                    e.span(),
-                )
+            .map_with(|((ident, ty), expr), e| ast::Stmt {
+                kind: ast::StmtKind::Var(
+                    ident,
+                    ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
+                    Box::new(expr),
+                    true,
+                ),
+                span: e.span(),
             });
 
         // Parse an assignment statement, which is of the form `<expr> [op] = <expr>;`, where
@@ -222,13 +203,9 @@ where
             .then_ignore(just(lexer::Token::Operator("=")))
             .then(expr_parser())
             .then_ignore(just(lexer::Token::Delimiter(";")))
-            .map_with(|((ident, op), expr), e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::Assign(op, Box::new(ident), Box::new(expr)),
-                    },
-                    e.span(),
-                )
+            .map_with(|((ident, op), expr), e| ast::Stmt {
+                kind: ast::StmtKind::Assign(op, Box::new(ident), Box::new(expr)),
+                span: e.span(),
             });
 
         let if_stmt = just(lexer::Token::Keyword("if"))
@@ -242,17 +219,13 @@ where
                     .ignore_then(block.clone())
                     .or_not(),
             )
-            .map_with(|((condition, then_block), else_block), e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::If(
-                            Box::new(condition),
-                            Box::new(then_block),
-                            else_block.map(Box::new),
-                        ),
-                    },
-                    e.span(),
-                )
+            .map_with(|((condition, then_block), else_block), e| ast::Stmt {
+                kind: ast::StmtKind::If(
+                    Box::new(condition),
+                    Box::new(then_block),
+                    else_block.map(Box::new),
+                ),
+                span: e.span(),
             });
 
         let while_stmt = just(lexer::Token::Keyword("while"))
@@ -261,13 +234,9 @@ where
                 just(lexer::Token::Delimiter(")")),
             ))
             .then(block.clone())
-            .map_with(|(condition, body), e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::While(Box::new(condition), Box::new(body)),
-                    },
-                    e.span(),
-                )
+            .map_with(|(condition, body), e| ast::Stmt {
+                kind: ast::StmtKind::While(Box::new(condition), Box::new(body)),
+                span: e.span(),
             });
 
         // An expression statement is simply an expression followed by a semicolon. The expression
@@ -275,13 +244,9 @@ where
         // side effects, such as function calls.
         let expr_stmt = expr_parser()
             .then_ignore(just(lexer::Token::Delimiter(";")))
-            .map_with(|expr, e| {
-                Spanned::new(
-                    ast::Stmt {
-                        kind: ast::StmtKind::Expr(Box::new(expr)),
-                    },
-                    e.span(),
-                )
+            .map_with(|expr, e| ast::Stmt {
+                kind: ast::StmtKind::Expr(Box::new(expr)),
+                span: e.span(),
             });
 
         choice((
@@ -302,33 +267,25 @@ where
 /// unary expressions, function calls...
 #[must_use]
 pub fn expr_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<ast::Expr<'src>>, ParserError<'tokens, 'src>>
+-> impl Parser<'tokens, I, ast::Expr<'src>, ParserError<'tokens, 'src>>
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     recursive(|expr| {
         // Parse a string literal. A string literal is a sequence of characters
         // enclosed in double quotes.
-        let string = atoms::string_parser().map_with(|s, e| {
-            Spanned::new(
-                ast::Expr {
-                    kind: ast::ExprKind::String(s),
-                    ty: Type::Builtin(BuiltinType::Str),
-                },
-                e.span(),
-            )
+        let string = atoms::string_value_parser().map_with(|s, e| ast::Expr {
+            kind: ast::ExprKind::String(s),
+            ty: Type::Builtin(BuiltinType::Str),
+            span: e.span(),
         });
 
         // An identifier is a sequence of characters that represents a name in the language.
         // Identifiers are used to name variables, functions, classes, etc.
-        let identifier = atoms::identifier_parser().map_with(|ident, e| {
-            Spanned::new(
-                ast::Expr {
-                    kind: ast::ExprKind::Identifier(ident),
-                    ty: lang::ty::Type::Infer,
-                },
-                e.span(),
-            )
+        let identifier = atoms::identifier_parser().map_with(|ident, e| ast::Expr {
+            kind: ast::ExprKind::Identifier(ident),
+            ty: lang::ty::Type::Infer,
+            span: e.span(),
         });
 
         // A list of expressions separated by commas. This is used for parsing
@@ -346,14 +303,10 @@ where
                 just(lexer::Token::Delimiter("{")),
                 just(lexer::Token::Delimiter("}")),
             )
-            .map_with(|elements, e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::List(elements),
-                        ty: lang::ty::Type::Infer,
-                    },
-                    e.span(),
-                )
+            .map_with(|elements, e| ast::Expr {
+                kind: ast::ExprKind::List(elements),
+                ty: lang::ty::Type::Infer,
+                span: e.span(),
             });
 
         // A function call is an identifier followed by a list of arguments enclosed
@@ -365,14 +318,10 @@ where
                 just(lexer::Token::Delimiter("(")),
                 just(lexer::Token::Delimiter(")")),
             ))
-            .map_with(|(function, args), e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::FunctionCall(Box::new(function), args),
-                        ty: lang::ty::Type::Infer,
-                    },
-                    e.span(),
-                )
+            .map_with(|(function, args), e| ast::Expr {
+                kind: ast::ExprKind::FunctionCall(Box::new(function), args),
+                ty: lang::ty::Type::Infer,
+                span: e.span(),
             })
             .boxed();
 
@@ -385,14 +334,10 @@ where
                 just(lexer::Token::Delimiter("(")),
                 just(lexer::Token::Delimiter(")")),
             ))
-            .map_with(|(function, args), e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::IntrinsicCall(Box::new(function), args),
-                        ty: lang::ty::Type::Infer,
-                    },
-                    e.span(),
-                )
+            .map_with(|(function, args), e| ast::Expr {
+                kind: ast::ExprKind::IntrinsicCall(Box::new(function), args),
+                ty: lang::ty::Type::Infer,
+                span: e.span(),
             })
             .boxed();
 
@@ -400,14 +345,10 @@ where
         // precedence in the expression hierarchy, since they cannot be broken down any further,
         // called "atoms" for that reason.
         let atom = atoms::number_parser()
-            .map_with(|lit, e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::Literal(lit),
-                        ty: Type::Builtin(BuiltinType::Int),
-                    },
-                    e.span(),
-                )
+            .map_with(|lit, e| ast::Expr {
+                kind: ast::ExprKind::Literal(lit),
+                ty: Type::Builtin(BuiltinType::Int),
+                span: e.span(),
             })
             .or(list)
             .or(intrinsic_call)
@@ -437,14 +378,10 @@ where
                 just(lexer::Token::Delimiter("."))
                     .ignore_then(atoms::identifier_parser())
                     .repeated(),
-                |base, field, e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::FieldAccess(Box::new(base), field),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |base, field, e| ast::Expr {
+                    kind: ast::ExprKind::FieldAccess(Box::new(base), field),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();
@@ -452,14 +389,10 @@ where
         // Parse unary operators.
         let unary = atoms::unary_ops()
             .repeated()
-            .foldr_with(dot_operator, |op, rhs, e| {
-                Spanned::new(
-                    ast::Expr {
-                        kind: ast::ExprKind::Unary(op, Box::new(rhs)),
-                        ty: lang::ty::Type::Infer,
-                    },
-                    e.span(),
-                )
+            .foldr_with(dot_operator, |op, rhs, e| ast::Expr {
+                kind: ast::ExprKind::Unary(op, Box::new(rhs)),
+                ty: lang::ty::Type::Infer,
+                span: e.span(),
             })
             .boxed();
 
@@ -468,14 +401,10 @@ where
             .clone()
             .foldl_with(
                 atoms::product_ops().then(unary).repeated(),
-                |lhs, (op, rhs), e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |lhs, (op, rhs), e| ast::Expr {
+                    kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();
@@ -485,14 +414,10 @@ where
             .clone()
             .foldl_with(
                 atoms::sum_ops().then(product).repeated(),
-                |lhs, (op, rhs), e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |lhs, (op, rhs), e| ast::Expr {
+                    kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();
@@ -502,14 +427,10 @@ where
             .clone()
             .foldl_with(
                 atoms::relational_ops().then(sum).repeated(),
-                |lhs, (op, rhs), e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |lhs, (op, rhs), e| ast::Expr {
+                    kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();
@@ -519,14 +440,10 @@ where
             .clone()
             .foldl_with(
                 atoms::logical_and_ops().then(relational_ops).repeated(),
-                |lhs, (op, rhs), e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |lhs, (op, rhs), e| ast::Expr {
+                    kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();
@@ -536,14 +453,10 @@ where
             .clone()
             .foldl_with(
                 atoms::logical_or_ops().then(logical_and).repeated(),
-                |lhs, (op, rhs), e| {
-                    Spanned::new(
-                        ast::Expr {
-                            kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                            ty: lang::ty::Type::Infer,
-                        },
-                        e.span(),
-                    )
+                |lhs, (op, rhs), e| ast::Expr {
+                    kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
+                    ty: lang::ty::Type::Infer,
+                    span: e.span(),
                 },
             )
             .boxed();

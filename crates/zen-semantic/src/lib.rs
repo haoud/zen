@@ -1,8 +1,5 @@
 use crate::error::SemanticDiagnostic;
-use lang::{
-    self, Spanned,
-    ty::{StructMetadata, TypeTable},
-};
+use lang::ty::{StructMetadata, TypeTable};
 use std::collections::HashMap;
 
 pub mod error;
@@ -40,12 +37,12 @@ impl<'src> SemanticAnalysis<'src> {
     }
 
     /// Perform semantic analysis on the given program
-    pub fn check_program(&mut self, program: &mut [Spanned<ast::TopLevelItem<'src>>]) {
+    pub fn check_program(&mut self, program: &mut [ast::TopLevelItem<'src>]) {
         // First, insert all function prototypes into the global scope and insert all struct
         // definitions into the type table without checking their fields or bodies to allow for
         // forward references during the analysis.
         for item in program.iter_mut() {
-            match &mut item.0.kind {
+            match &mut item.kind {
                 ast::TopLevelItemKind::Function(func) => {
                     self.scopes.insert_function(&mut self.errors, func);
                 }
@@ -57,14 +54,14 @@ impl<'src> SemanticAnalysis<'src> {
 
         // Now, check all struct definitions to ensure their fields are semantically correct
         for item in program.iter_mut() {
-            if let ast::TopLevelItemKind::Struct(structure) = &mut item.0.kind {
+            if let ast::TopLevelItemKind::Struct(structure) = &mut item.kind {
                 self.check_struct(structure);
             }
         }
 
         // Now, check each function for semantic correctness.
         for items in program.iter_mut() {
-            if let ast::TopLevelItemKind::Function(function) = &mut items.0.kind {
+            if let ast::TopLevelItemKind::Function(function) = &mut items.kind {
                 self.check_function(function);
             }
         }
@@ -74,19 +71,18 @@ impl<'src> SemanticAnalysis<'src> {
     /// only checks for redeclarations of the struct itself and its fields, but does not check the
     /// field types for correctness at this stage. More detailed checks are performed later in
     /// `check_struct`.
-    pub fn insert_struct(&mut self, structure: &Spanned<ast::Struct<'src>>) {
+    pub fn insert_struct(&mut self, structure: &ast::Struct<'src>) {
         // Check for struct redeclaration.
         if let Some(first) = self.types.get_struct_metadata(&structure.ident.name) {
             self.errors.emit_struct_redefinition_error(
                 structure.ident.name,
-                structure.span(),
+                structure.span,
                 first.span,
             );
         } else {
             // Collect field types and check for redeclarations
             let mut fields_order = Vec::new();
             let mut fields = HashMap::new();
-            let span = structure.span();
 
             for field in &structure.fields {
                 if fields.contains_key(field.ident.name) {
@@ -97,8 +93,8 @@ impl<'src> SemanticAnalysis<'src> {
                         .unwrap();
                     self.errors.emit_struct_field_redeclaration_error(
                         field.ident.name,
-                        field.span(),
-                        first.span(),
+                        field.span,
+                        first.span,
                     );
                 } else {
                     fields.insert(field.ident.name.to_owned(), field.ty.inner().clone());
@@ -112,14 +108,14 @@ impl<'src> SemanticAnalysis<'src> {
                 StructMetadata {
                     fields_order,
                     fields,
-                    span,
+                    span: structure.span,
                 },
             );
         }
     }
 
     /// Check a function for semantic correctness.
-    pub fn check_function(&mut self, function: &mut Spanned<ast::Function<'src>>) {
+    pub fn check_function(&mut self, function: &mut ast::Function<'src>) {
         // Verify that array types are not used as function parameter types.
         if function.prototype.ret.is_array() {
             self.errors.emit_array_type_as_function_return_type_error(
@@ -134,20 +130,18 @@ impl<'src> SemanticAnalysis<'src> {
             // Verify that function parameters are not declared with the void type.
             if param.ty.is_void() {
                 self.errors
-                    .emit_void_function_parameter_error(param.span(), &function.prototype);
+                    .emit_void_function_parameter_error(param.span, &function.prototype);
             }
 
             // Insert the parameter into the current scope.
             self.scopes.insert_variable(
                 &mut self.errors,
-                Spanned::new(
-                    lang::sym::Variable {
-                        mutable: param.mutable,
-                        name: param.ident.name,
-                        ty: param.ty.0.clone(),
-                    },
-                    param.span(),
-                ),
+                lang::sym::Variable {
+                    mutable: param.mutable,
+                    name: param.ident.name,
+                    ty: param.ty.0.clone(),
+                    span: param.span,
+                },
             );
         }
         self.check_statements(function.prototype.clone(), &mut function.body);
@@ -156,16 +150,13 @@ impl<'src> SemanticAnalysis<'src> {
         // Simple control flow analysis to ensure all code paths return a value and to
         // identify unreachable code.
         let mut cfa = flow::ControlFlowAnalysis::new(&mut self.errors);
-        cfa.check_block(&function.0.body, function);
+        cfa.check_block(&function.body, function);
     }
 
     /// Check a struct definition for semantic correctness. This includes verifying that
     /// field types are valid and that there are no recursive struct definitions that would
     /// lead to infinite size types.
-    pub fn check_struct(&mut self, structure: &mut Spanned<ast::Struct<'src>>) {
-        let struct_span = structure.ident.span();
-        let struct_name = structure.ident.name;
-
+    pub fn check_struct(&mut self, structure: &mut ast::Struct<'src>) {
         for field in &mut structure.fields {
             // Void type is not allowed for struct fields.
             if field.ty.is_void() {
@@ -186,10 +177,10 @@ impl<'src> SemanticAnalysis<'src> {
                 // Recursive struct definitions are not allowed to prevent infinite size types.
                 // We check if the field type is the same as the struct being defined, but we
                 // also need to consider indirect recursion involving other structs.
-                if self.check_indirect_recursion(&field.ty.0, &struct_name) {
+                if self.check_indirect_recursion(&field.ty.0, &structure.ident.name) {
                     self.errors.emit_infinite_struct_size_error(
-                        &struct_name,
-                        struct_span,
+                        &structure.ident.name,
+                        structure.ident.span,
                         field.ty.span(),
                     );
                     field.ty.0 = lang::ty::Type::Unknown;

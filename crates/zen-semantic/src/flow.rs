@@ -1,5 +1,3 @@
-use lang::Spanned;
-
 use crate::error::SemanticDiagnostic;
 
 /// A simple control flow analysis.
@@ -18,11 +16,7 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
 
     /// Ensure that all code paths in the given block of statements return a value. Any unreachable
     /// code after a return statement will be signaled as an error.
-    pub fn check_block(
-        &mut self,
-        stmts: &'a [Spanned<ast::Stmt<'src>>],
-        function: &Spanned<ast::Function<'src>>,
-    ) {
+    pub fn check_block(&mut self, stmts: &'a [ast::Stmt<'src>], function: &ast::Function<'src>) {
         let mut return_all_paths = false;
         let mut unreachable_code_error_reported = false;
         let mut return_span: Option<chumsky::span::SimpleSpan> = None;
@@ -33,28 +27,28 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
             // analysis of this statement list.
             if return_all_paths && !unreachable_code_error_reported {
                 self.errors
-                    .emit_unreachable_code_error(return_span.unwrap(), stmt.span());
+                    .emit_unreachable_code_error(return_span.unwrap(), stmt.span);
                 unreachable_code_error_reported = true;
                 continue;
             }
 
             match &stmt.kind {
                 ast::StmtKind::If(_, then, or) => {
-                    let then_returns = returns_in_all_paths(&then.0.stmts);
+                    let then_returns = returns_in_all_paths(&then.stmts);
                     let else_returns = if let Some(else_branch) = or {
-                        returns_in_all_paths(&else_branch.0.stmts)
+                        returns_in_all_paths(&else_branch.stmts)
                     } else {
                         false
                     };
 
                     if then_returns && else_returns {
                         return_all_paths = true;
-                        return_span = Some(stmt.span());
+                        return_span = Some(stmt.span);
                     }
                 }
                 ast::StmtKind::Return(_) => {
                     return_all_paths = true;
-                    return_span = Some(stmt.span());
+                    return_span = Some(stmt.span);
                 }
                 _ => {}
             }
@@ -65,22 +59,22 @@ impl<'a, 'src> ControlFlowAnalysis<'a, 'src> {
         // the function will implicitly return void.
         if !return_all_paths && !function.prototype.ret.is_void() {
             self.errors
-                .emit_not_all_paths_return_value_error(&function.prototype, function.span());
+                .emit_not_all_paths_return_value_error(&function.prototype, function.span);
         }
     }
 }
 
 /// Check if all paths in the given statements list return a value.
 #[must_use]
-pub fn returns_in_all_paths(stmts: &[Spanned<ast::Stmt<'_>>]) -> bool {
+pub fn returns_in_all_paths(stmts: &[ast::Stmt<'_>]) -> bool {
     for stmt in stmts {
         match &stmt.kind {
             ast::StmtKind::If(_, then, or) => {
                 // If an branch of the if statement does return, we need to check other branches
                 // to ensure they also return in all paths.
-                let then_returns = returns_in_all_paths(&then.0.stmts);
+                let then_returns = returns_in_all_paths(&then.stmts);
                 let else_returns = if let Some(else_branch) = or {
-                    returns_in_all_paths(&else_branch.0.stmts)
+                    returns_in_all_paths(&else_branch.stmts)
                 } else {
                     false
                 };

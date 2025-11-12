@@ -1,7 +1,4 @@
-use lang::{
-    Spanned,
-    ty::{BuiltinType, Type},
-};
+use lang::ty::{BuiltinType, Type};
 
 use crate::c::Codegen;
 
@@ -19,7 +16,7 @@ impl Codegen<'_> {
                 ast::ExprKind::List(items) => {
                     let elements = items
                         .iter()
-                        .map(|item| self.generate_fmt_args(&item.0))
+                        .map(|item| self.generate_fmt_args(&item))
                         .collect::<Vec<String>>()
                         .join(", ");
                     format!("{}", elements)
@@ -71,7 +68,7 @@ impl Codegen<'_> {
 /// # Panics
 /// Panics if the number of `{}` in the format string does not match the number of arguments.
 #[must_use]
-pub fn generate_fmt_string(fmt: &str, args: &[Spanned<ast::Expr>]) -> String {
+pub fn generate_fmt_string(fmt: &str, args: &[ast::Expr]) -> String {
     let mut chars = fmt.chars().peekable();
     let mut result = String::new();
     let mut idx = 0;

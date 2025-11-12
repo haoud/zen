@@ -9,7 +9,8 @@
 //! the complexity of writing a lexer, which is nice as it allows us to focus on the language
 //! itself rather than some "boring" implementation details.
 use chumsky::prelude::*;
-use lang::{Literal, LiteralBase, Span, Spanned};
+use lang::{Literal, LiteralBase};
+use span::{Span, Spanned};
 
 #[cfg(test)]
 pub mod tests;

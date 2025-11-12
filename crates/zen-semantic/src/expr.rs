@@ -1,11 +1,9 @@
 use crate::SemanticAnalysis;
-use lang::Spanned;
+use span::Span;
 
 impl<'src> SemanticAnalysis<'src> {
     /// Check an expression for semantic correctness, returning any errors found.
-    pub fn check_expr(&mut self, expr: &mut Spanned<ast::Expr<'src>>, negated: bool) {
-        let span = expr.span();
-
+    pub fn check_expr(&mut self, expr: &mut ast::Expr<'src>, negated: bool) {
         self.infer_expr(expr, None);
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
@@ -16,11 +14,12 @@ impl<'src> SemanticAnalysis<'src> {
                 // future, we may want to implement type coercion rules here.
                 if lhs.ty != rhs.ty {
                     if op.is_comparison() {
-                        self.errors
-                            .emit_comparison_with_incompatible_types_error(*op, lhs, rhs, span);
+                        self.errors.emit_comparison_with_incompatible_types_error(
+                            *op, lhs, rhs, expr.span,
+                        );
                     } else {
                         self.errors
-                            .emit_binary_op_type_mismatch_error(*op, lhs, rhs, span);
+                            .emit_binary_op_type_mismatch_error(*op, lhs, rhs, expr.span);
                     }
                 }
 
@@ -33,7 +32,7 @@ impl<'src> SemanticAnalysis<'src> {
                 // If the operation is not supported by the type, emit an error.
                 if !self.types.support_binary_op(*op, &lhs.ty) {
                     self.errors
-                        .emit_invalid_binary_operation_for_type_error(*op, &lhs.ty, span);
+                        .emit_invalid_binary_operation_for_type_error(*op, &lhs.ty, expr.span);
                 }
             }
             ast::ExprKind::Unary(op, rhs) => {
@@ -55,7 +54,7 @@ impl<'src> SemanticAnalysis<'src> {
                 // If the operation is not supported by the type, emit an error.
                 if !self.types.support_unary_op(*op, &rhs.ty) {
                     self.errors
-                        .emit_invalid_unary_operation_for_type_error(*op, &rhs.ty, span);
+                        .emit_invalid_unary_operation_for_type_error(*op, &rhs.ty, expr.span);
                 }
             }
             ast::ExprKind::FunctionCall(ident, args) => {
@@ -71,7 +70,7 @@ impl<'src> SemanticAnalysis<'src> {
                             ident,
                             func.params.len(),
                             args.len(),
-                            span,
+                            expr.span,
                         );
                     }
 
@@ -79,10 +78,7 @@ impl<'src> SemanticAnalysis<'src> {
                     for (arg, param) in args.iter_mut().zip(&func.params) {
                         if arg.ty != param.ty && arg.ty.is_valid() {
                             self.errors.emit_argument_type_mismatch_error(
-                                param,
-                                arg,
-                                param.span(),
-                                span,
+                                param, arg, param.span, expr.span,
                             );
                         }
                     }
@@ -103,7 +99,7 @@ impl<'src> SemanticAnalysis<'src> {
                         // Ensure that at least one argument (the format string) is provided.
                         if args.is_empty() {
                             self.errors.emit_intrinsic_argument_count_mismatch_error(
-                                ident, 1, 0, true, span,
+                                ident, 1, 0, true, expr.span,
                             );
                             return;
                         }
@@ -133,13 +129,13 @@ impl<'src> SemanticAnalysis<'src> {
                                 expected_arg_count + 1,
                                 provided_arg_count + 1,
                                 false,
-                                span,
+                                expr.span,
                             );
                         }
                     }
                     _ => {
                         self.errors
-                            .emit_unknown_intrinsic_function_error(ident, span);
+                            .emit_unknown_intrinsic_function_error(ident, expr.span);
                     }
                 }
             }
@@ -206,17 +202,12 @@ impl<'src> SemanticAnalysis<'src> {
     /// This function will panic if it encounters an `ast::ExprKind::Error`, as such expressions
     /// should not appear during type inference, or if an expression's type is still `Infer` but
     /// should have been determined during parsing (e.g., string or boolean literals).
-    pub fn infer_expr(
-        &mut self,
-        expr: &mut Spanned<ast::Expr<'src>>,
-        target: Option<&lang::ty::Type>,
-    ) {
+    pub fn infer_expr(&mut self, expr: &mut ast::Expr<'src>, target: Option<&lang::ty::Type>) {
         // The expression's type is already known, so no inference is needed.
         if expr.ty != lang::ty::Type::Infer {
             return;
         }
 
-        let span = expr.span();
         match &mut expr.kind {
             ast::ExprKind::Binary(op, lhs, rhs) => {
                 // Recursively infer types of the left and right expressions if needed.
@@ -312,7 +303,7 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::List(items) => {
                 if let Some(target) = target {
                     // Try to infer the list item types based on the target type.
-                    let inferred_type = self.infer_list_items(items, target, span);
+                    let inferred_type = self.infer_list_items(items, target, expr.span);
                     expr.ty = inferred_type;
                 } else {
                     // Recursively infer types for each item in the list.
@@ -356,7 +347,7 @@ impl<'src> SemanticAnalysis<'src> {
                     self.errors.emit_unknown_field_access_error(
                         field,
                         &expression.ty,
-                        expression.span(),
+                        expression.span,
                     );
                     expr.ty = lang::ty::Type::Unknown;
                 }
@@ -382,9 +373,9 @@ impl<'src> SemanticAnalysis<'src> {
     /// type. If not, return `Unknown`.
     pub fn infer_list_items(
         &mut self,
-        items: &mut [Spanned<ast::Expr<'src>>],
+        items: &mut [ast::Expr<'src>],
         target: &lang::ty::Type,
-        span: lang::Span,
+        span: Span,
     ) -> lang::ty::Type {
         match target {
             lang::ty::Type::Array(ty, len) => {

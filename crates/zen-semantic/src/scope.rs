@@ -1,4 +1,4 @@
-use {crate::error::SemanticDiagnostic, ast, lang::Spanned};
+use crate::error::SemanticDiagnostic;
 
 /// The scope stack for managing variable and function declarations.
 #[derive(Debug, Clone)]
@@ -109,7 +109,7 @@ impl<'src> Scope<'src> {
 
     /// Get a function with the given identifier from any scope in the stack.
     #[must_use]
-    pub fn get_function(&self, ident: &str) -> Option<&Spanned<lang::sym::Function<'src>>> {
+    pub fn get_function(&self, ident: &str) -> Option<&lang::sym::Function<'src>> {
         self.scopes
             .iter()
             .rev()
@@ -118,7 +118,7 @@ impl<'src> Scope<'src> {
 
     /// Get a variable with the given identifier from any scope in the stack.
     #[must_use]
-    pub fn get_variable(&self, ident: &str) -> Option<&Spanned<lang::sym::Variable<'src>>> {
+    pub fn get_variable(&self, ident: &str) -> Option<&lang::sym::Variable<'src>> {
         self.scopes
             .iter()
             .rev()
@@ -134,43 +134,32 @@ impl<'src> Scope<'src> {
     pub fn insert_function(
         &mut self,
         errors: &mut SemanticDiagnostic<'src>,
-        func: &Spanned<ast::Function<'src>>,
+        func: &ast::Function<'src>,
     ) {
-        if let Some(function) = self.get_function(func.0.prototype.ident.name) {
-            errors.emit_function_redefinition_error(
-                &func.0.prototype,
-                function.span(),
-                func.span(),
-            );
+        if let Some(function) = self.get_function(func.prototype.ident.name) {
+            errors.emit_function_redefinition_error(&func.prototype, function.span, func.span);
         } else {
             // Convert the function parameters to variable symbols.
             let params = func
-                .0
                 .prototype
                 .params
                 .iter()
-                .map(|param| {
-                    Spanned::new(
-                        lang::sym::Variable {
-                            mutable: param.mutable,
-                            name: param.ident.name,
-                            ty: param.ty.0.clone(),
-                        },
-                        param.span(),
-                    )
+                .map(|param| lang::sym::Variable {
+                    mutable: param.mutable,
+                    name: param.ident.name,
+                    ty: param.ty.0.clone(),
+                    span: param.span,
                 })
                 .collect::<Vec<_>>();
 
             self.current_scope_mut()
                 .symbols_mut()
-                .insert_function(Spanned::new(
-                    lang::sym::Function {
-                        name: func.0.prototype.ident.name,
-                        ret: func.0.prototype.ret.0.clone(),
-                        params,
-                    },
-                    func.span(),
-                ));
+                .insert_function(lang::sym::Function {
+                    name: func.prototype.ident.name,
+                    ret: func.prototype.ret.0.clone(),
+                    span: func.span,
+                    params,
+                });
         }
     }
 
@@ -183,7 +172,7 @@ impl<'src> Scope<'src> {
     pub fn insert_variable(
         &mut self,
         errors: &mut SemanticDiagnostic<'src>,
-        variable: Spanned<lang::sym::Variable<'src>>,
+        variable: lang::sym::Variable<'src>,
     ) {
         if let Some(original) = self.get_variable(variable.name) {
             errors.emit_variable_redefinition_error(original, &variable);

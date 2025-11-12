@@ -1,4 +1,4 @@
-use lang::Spanned;
+use span::{Span, Spanned};
 
 use crate::SemanticAnalysis;
 
@@ -6,16 +6,14 @@ impl<'src> SemanticAnalysis<'src> {
     /// Check the statements within a function for semantic correctness.
     pub fn check_statements(
         &mut self,
-        proto: Spanned<ast::FunctionPrototype<'src>>,
-        stmts: &mut [Spanned<ast::Stmt<'src>>],
+        proto: ast::FunctionPrototype<'src>,
+        stmts: &mut [ast::Stmt<'src>],
     ) {
         for stmt in stmts.iter_mut() {
             // Infer the type of the statement and its contents, as it may affect
             // subsequent checks.
             self.infer_stmt(stmt);
-
-            let stmt_span = stmt.span();
-            match &mut stmt.0.kind {
+            match &mut stmt.kind {
                 ast::StmtKind::Return(expr) => {
                     if let Some(expr) = expr.as_mut() {
                         self.check_expr(expr, false);
@@ -24,27 +22,22 @@ impl<'src> SemanticAnalysis<'src> {
                         // is being returned. Skip further checks for this return statement.
                         if proto.ret.is_void() {
                             self.errors.emit_return_value_from_void_function_error(
-                                proto.span(),
-                                stmt_span,
-                                expr,
+                                proto.span, stmt.span, expr,
                             );
                             continue;
                         }
 
                         // Verify that the return expression type matches the function's return type.
                         if expr.ty != proto.ret.0 && expr.ty.is_valid() {
-                            self.errors.emit_return_type_mismatch_error(
-                                &proto,
-                                expr.span(),
-                                &expr.ty,
-                            );
+                            self.errors
+                                .emit_return_type_mismatch_error(&proto, expr.span, &expr.ty);
                         }
                     } else {
                         // Verify that the function's return type is void if no expression
                         // is returned.
                         if proto.ret.is_void() {
                             self.errors
-                                .emit_missing_return_expression_error(&proto, stmt_span);
+                                .emit_missing_return_expression_error(&proto, stmt.span);
                         }
                     }
                 }
@@ -56,7 +49,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // invalid.
                     if ty.is_void() {
                         self.errors
-                            .emit_void_variable_declaration_error(stmt_span, ident.name);
+                            .emit_void_variable_declaration_error(stmt.span, ident.name);
                         continue;
                     }
 
@@ -65,11 +58,10 @@ impl<'src> SemanticAnalysis<'src> {
                     // that should have happened before this semantic check.
                     if expr.ty != ty.0 && expr.ty.is_valid() {
                         self.errors
-                            .emit_variable_definition_type_mismatch_error(expr, ty, stmt_span);
+                            .emit_variable_definition_type_mismatch_error(expr, ty, stmt.span);
                     }
                 }
                 ast::StmtKind::Assign(op, lvalue, expr) => {
-                    let lvalue_span = lvalue.span();
                     self.check_expr(lvalue, false);
                     self.check_expr(expr, false);
 
@@ -79,21 +71,21 @@ impl<'src> SemanticAnalysis<'src> {
                                 ident,
                                 &expr.ty,
                                 *op,
-                                lvalue_span,
-                                stmt_span,
+                                lvalue.span,
+                                stmt.span,
                                 false,
                             );
                         }
                         ast::ExprKind::FieldAccess(lvalue, field) => {
                             self.check_field_access_assign(
-                                lvalue, field, expr, *op, stmt_span, false,
+                                lvalue, field, expr, *op, stmt.span, false,
                             );
                         }
                         _ => {
                             // Invalid left-hand side in assignment: emit an error and skip further
                             // checks. The left-hand side must be a variable or a field access.
                             self.errors
-                                .emit_invalid_assignment_lvalue_error(lvalue, stmt_span);
+                                .emit_invalid_assignment_lvalue_error(lvalue, stmt.span);
                             continue;
                         }
                     }
@@ -101,10 +93,10 @@ impl<'src> SemanticAnalysis<'src> {
                     if lvalue.ty != expr.ty && lvalue.ty.is_valid() {
                         self.errors.emit_type_mismatch_in_assignment_error(
                             &lvalue.ty,
-                            lvalue.span(),
+                            lvalue.span,
                             &expr.ty,
-                            expr.span(),
-                            stmt_span,
+                            expr.span,
+                            stmt.span,
                         );
                     }
                 }
@@ -115,7 +107,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Ensure that the condition expression evaluates to a boolean type.
                     if !cond.ty.is_boolean() {
                         self.errors
-                            .emit_non_boolean_in_conditional_error(cond, stmt_span);
+                            .emit_non_boolean_in_conditional_error(cond, stmt.span);
                     }
 
                     // Recursively check the statements in the `then` block
@@ -137,7 +129,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Ensure that the condition expression evaluates to a boolean type.
                     if !cond.ty.is_boolean() {
                         self.errors
-                            .emit_non_boolean_in_conditional_error(cond, stmt_span);
+                            .emit_non_boolean_in_conditional_error(cond, stmt.span);
                     }
 
                     // Check the statements in the loop body
@@ -162,17 +154,14 @@ impl<'src> SemanticAnalysis<'src> {
     /// expressions that can be assigned to are identifiers (variables) and (nested) field accesses.
     pub fn check_field_access_assign(
         &mut self,
-        lvalue: &mut Spanned<ast::Expr<'src>>,
-        field: &mut Spanned<ast::Identifier<'src>>,
-        assign_expr: &mut Spanned<ast::Expr<'src>>,
+        lvalue: &mut ast::Expr<'src>,
+        field: &mut ast::Identifier<'src>,
+        assign_expr: &mut ast::Expr<'src>,
         assign_op: Option<lang::BinaryOp>,
-        stmt_span: lang::Span,
+        stmt_span: Span,
         recursion: bool,
     ) {
         self.check_expr(lvalue, false);
-
-        let lvalue_span = lvalue.span();
-        let lvalue_ty = &lvalue.ty.clone();
 
         // If not in recursion, we need to ensure that the field type supports the assignment
         // operation (for compound assignments).
@@ -182,13 +171,10 @@ impl<'src> SemanticAnalysis<'src> {
                 // assignment operation. If it does not, emit an error.
                 // If the lvalue type does not have the field, skip this check as an error
                 // should have already been emitted during expression checking.
-                if let Some(ty) = self.types.get_field(lvalue_ty, field.name) {
+                if let Some(ty) = self.types.get_field(&lvalue.ty, field.name) {
                     if !self.types.support_binary_op(op, &ty) {
-                        self.errors.emit_invalid_binary_operation_for_type_error(
-                            op,
-                            &ty,
-                            field.span(),
-                        );
+                        self.errors
+                            .emit_invalid_binary_operation_for_type_error(op, &ty, field.span);
                     }
                 }
             }
@@ -199,9 +185,9 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::Identifier(ident) => {
                 self.check_variable_assign(
                     ident,
-                    lvalue_ty,
+                    &lvalue.ty,
                     assign_op,
-                    lvalue_span,
+                    lvalue.span,
                     stmt_span,
                     true,
                 );
@@ -225,11 +211,11 @@ impl<'src> SemanticAnalysis<'src> {
     /// Check a variable assignment for semantic correctness.
     pub fn check_variable_assign(
         &mut self,
-        assign_ident: &Spanned<ast::Identifier<'src>>,
+        assign_ident: &ast::Identifier<'src>,
         assign_ty: &lang::ty::Type,
         assign_op: Option<lang::BinaryOp>,
-        assign_span: lang::Span,
-        stmt_span: lang::Span,
+        assign_span: Span,
+        stmt_span: Span,
         field_access: bool,
     ) {
         // If the variable does not exist, report an undefined variable error
@@ -259,8 +245,7 @@ impl<'src> SemanticAnalysis<'src> {
     }
 
     /// Infer types for a statement, updating it in place.
-    pub fn infer_stmt(&mut self, stmt: &mut Spanned<ast::Stmt<'src>>) {
-        let span = stmt.span();
+    pub fn infer_stmt(&mut self, stmt: &mut ast::Stmt<'src>) {
         match &mut stmt.kind {
             ast::StmtKind::Return(expr) => {
                 if let Some(expr) = expr.as_mut() {
@@ -268,7 +253,7 @@ impl<'src> SemanticAnalysis<'src> {
                 }
             }
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
-                self.infer_let_var(ident, expr, ty, span, *mutable);
+                self.infer_let_var(ident, expr, ty, stmt.span, *mutable);
             }
             ast::StmtKind::Assign(_, lvalue, expr) => {
                 self.infer_expr(lvalue, None);
@@ -305,9 +290,9 @@ impl<'src> SemanticAnalysis<'src> {
     fn infer_let_var(
         &mut self,
         ident: &ast::Identifier<'src>,
-        expr: &mut Spanned<ast::Expr<'src>>,
+        expr: &mut ast::Expr<'src>,
         ty: &mut Spanned<lang::ty::Type>,
-        span: lang::Span,
+        span: Span,
         mutable: bool,
     ) {
         // Verify that the type exists if it is a user-defined type.
@@ -329,14 +314,12 @@ impl<'src> SemanticAnalysis<'src> {
         // name already exists in the current scope, an error will be reported.
         self.scopes.insert_variable(
             &mut self.errors,
-            Spanned::new(
-                lang::sym::Variable {
-                    name: ident.name,
-                    ty: ty.0.clone(),
-                    mutable,
-                },
+            lang::sym::Variable {
+                name: ident.name,
+                ty: ty.0.clone(),
+                mutable,
                 span,
-            ),
+            },
         );
     }
 }

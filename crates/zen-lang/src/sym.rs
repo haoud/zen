@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Spanned, ty::Type};
+use crate::ty::Type;
 
 /// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,9 @@ pub struct Variable<'src> {
 
     /// Whether the variable is mutable or not.
     pub mutable: bool,
+
+    /// The span of the variable declaration.
+    pub span: span::Span,
 }
 
 /// A function symbol
@@ -23,18 +26,21 @@ pub struct Function<'src> {
     pub name: &'src str,
 
     /// A list of parameters for the function.
-    pub params: Vec<Spanned<Variable<'src>>>,
+    pub params: Vec<Variable<'src>>,
 
     /// The return type of the function.
     pub ret: Type,
+
+    /// The span of the function declaration.
+    pub span: span::Span,
 }
 
 /// A symbol table containing variables and functions. It supports insertion and lookup of symbols,
 /// but does not handle scope or shadowing.
 #[derive(Debug, Clone)]
 pub struct SymbolTable<'src> {
-    variables: HashMap<&'src str, Spanned<Variable<'src>>>,
-    functions: HashMap<&'src str, Spanned<Function<'src>>>,
+    variables: HashMap<&'src str, Variable<'src>>,
+    functions: HashMap<&'src str, Function<'src>>,
 }
 
 impl<'src> SymbolTable<'src> {
@@ -52,7 +58,7 @@ impl<'src> SymbolTable<'src> {
     /// # Panics
     /// This function will panic if a variable with the same name already exists in the symbol
     /// table. This should never happen if the semantic analysis is done correctly.
-    pub fn insert_variable(&mut self, variable: Spanned<Variable<'src>>) {
+    pub fn insert_variable(&mut self, variable: Variable<'src>) {
         assert!(!self.variable_exists(variable.name));
         self.variables.insert(variable.name, variable);
     }
@@ -62,7 +68,7 @@ impl<'src> SymbolTable<'src> {
     /// # Panics
     /// This function will panic if a function with the same name already exists in the symbol
     /// table. This should never happen if the semantic analysis is done correctly.
-    pub fn insert_function(&mut self, function: Spanned<Function<'src>>) {
+    pub fn insert_function(&mut self, function: Function<'src>) {
         assert!(!self.function_exists(function.name));
         self.functions.insert(function.name, function);
     }
@@ -81,13 +87,13 @@ impl<'src> SymbolTable<'src> {
 
     /// Get a reference to a variable by name.
     #[must_use]
-    pub fn get_variable(&self, name: &str) -> Option<&Spanned<Variable<'src>>> {
+    pub fn get_variable(&self, name: &str) -> Option<&Variable<'src>> {
         self.variables.get(name)
     }
 
     /// Get a reference to a function by name.
     #[must_use]
-    pub fn get_function(&self, name: &str) -> Option<&Spanned<Function<'src>>> {
+    pub fn get_function(&self, name: &str) -> Option<&Function<'src>> {
         self.functions.get(name)
     }
 }
