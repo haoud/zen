@@ -20,7 +20,7 @@ impl<'src> SemanticAnalysis<'src> {
 
                         // If the function's return type is void, emitting an error since a value
                         // is being returned. Skip further checks for this return statement.
-                        if proto.ret.is_void() {
+                        if proto.ret.specifier.is_void() {
                             self.errors.emit_return_value_from_void_function_error(
                                 proto.span, stmt.span, expr,
                             );
@@ -28,14 +28,14 @@ impl<'src> SemanticAnalysis<'src> {
                         }
 
                         // Verify that the return expression type matches the function's return type.
-                        if expr.ty != proto.ret.0 && expr.ty.is_valid() {
+                        if expr.ty != proto.ret.specifier && expr.ty.is_valid() {
                             self.errors
                                 .emit_return_type_mismatch_error(&proto, expr.span, &expr.ty);
                         }
                     } else {
                         // Verify that the function's return type is void if no expression
                         // is returned.
-                        if proto.ret.is_void() {
+                        if proto.ret.specifier.is_void() {
                             self.errors
                                 .emit_missing_return_expression_error(&proto, stmt.span);
                         }
@@ -47,7 +47,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // Verify that the variable is not declared with type void. If it is, emit an
                     // error and skip further checks for this variable declaration since it is
                     // invalid.
-                    if ty.is_void() {
+                    if ty.specifier.is_void() {
                         self.errors
                             .emit_void_variable_declaration_error(stmt.span, ident.name);
                         continue;
@@ -56,9 +56,11 @@ impl<'src> SemanticAnalysis<'src> {
                     // Verify that the expression type matches the declared type if provided. If no
                     // type is provided, it should have been inferred during the type inference step
                     // that should have happened before this semantic check.
-                    if expr.ty != ty.0 && expr.ty.is_valid() {
-                        self.errors
-                            .emit_variable_definition_type_mismatch_error(expr, ty, stmt.span);
+                    if expr.ty != ty.specifier && expr.ty.is_valid() {
+                        let ty_spanned = Spanned::new(&ty.specifier, ty.span);
+                        self.errors.emit_variable_definition_type_mismatch_error(
+                            expr, ty_spanned, stmt.span,
+                        );
                     }
                 }
                 ast::StmtKind::Assign(op, lvalue, expr) => {
@@ -212,7 +214,7 @@ impl<'src> SemanticAnalysis<'src> {
     pub fn check_variable_assign(
         &mut self,
         assign_ident: &ast::Identifier<'src>,
-        assign_ty: &lang::ty::Type,
+        assign_ty: &lang::ty::TypeSpecifier,
         assign_op: Option<lang::BinaryOp>,
         assign_span: Span,
         stmt_span: Span,
@@ -291,23 +293,23 @@ impl<'src> SemanticAnalysis<'src> {
         &mut self,
         ident: &ast::Identifier<'src>,
         expr: &mut ast::Expr<'src>,
-        ty: &mut Spanned<lang::ty::Type>,
+        ty: &mut ast::Type,
         span: Span,
         mutable: bool,
     ) {
         // Verify that the type exists if it is a user-defined type.
-        if let lang::ty::Type::Struct(name) = &ty.0 {
+        if let lang::ty::TypeSpecifier::Struct(name) = &ty.specifier {
             if !self.types.struct_exists(name) {
-                self.errors.emit_unknown_type_error(ty.span(), ty);
+                self.errors.emit_unknown_type_error(ty.span, &ty.specifier);
             }
         }
 
         // Infer the type of the expression if it is not already known.
-        if ty.0 == lang::ty::Type::Infer {
+        if ty.specifier == lang::ty::TypeSpecifier::Infer {
             self.infer_expr(expr, None);
-            ty.0 = expr.ty.clone();
+            ty.specifier = expr.ty.clone();
         } else {
-            self.infer_expr(expr, Some(&mut ty.0));
+            self.infer_expr(expr, Some(&mut ty.specifier));
         }
 
         // Insert the new variable into the current scope. If a variable with the same
@@ -316,7 +318,7 @@ impl<'src> SemanticAnalysis<'src> {
             &mut self.errors,
             lang::sym::Variable {
                 name: ident.name,
-                ty: ty.0.clone(),
+                ty: ty.specifier.clone(),
                 mutable,
                 span,
             },

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ty::Type;
+use crate::ty::TypeSpecifier;
 
 /// A variable symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,7 +9,7 @@ pub struct Variable<'src> {
     pub name: &'src str,
 
     /// The type of the variable.
-    pub ty: Type,
+    pub ty: TypeSpecifier,
 
     /// Whether the variable is mutable or not.
     pub mutable: bool,
@@ -29,7 +29,7 @@ pub struct Function<'src> {
     pub params: Vec<Variable<'src>>,
 
     /// The return type of the function.
-    pub ret: Type,
+    pub ret: TypeSpecifier,
 
     /// The span of the function declaration.
     pub span: span::Span,

@@ -97,7 +97,7 @@ impl<'src> SemanticAnalysis<'src> {
                         first.span,
                     );
                 } else {
-                    fields.insert(field.ident.name.to_owned(), field.ty.inner().clone());
+                    fields.insert(field.ident.name.to_owned(), field.ty.specifier.clone());
                     fields_order.push(field.ident.name.to_owned());
                 }
             }
@@ -117,9 +117,9 @@ impl<'src> SemanticAnalysis<'src> {
     /// Check a function for semantic correctness.
     pub fn check_function(&mut self, function: &mut ast::Function<'src>) {
         // Verify that array types are not used as function parameter types.
-        if function.prototype.ret.is_array() {
+        if function.prototype.ret.specifier.is_array() {
             self.errors.emit_array_type_as_function_return_type_error(
-                function.prototype.ret.span(),
+                function.prototype.ret.span,
                 &function.prototype,
             );
         }
@@ -128,7 +128,7 @@ impl<'src> SemanticAnalysis<'src> {
         self.scopes.enter_scope();
         for param in &function.prototype.params {
             // Verify that function parameters are not declared with the void type.
-            if param.ty.is_void() {
+            if param.ty.specifier.is_void() {
                 self.errors
                     .emit_void_function_parameter_error(param.span, &function.prototype);
             }
@@ -139,7 +139,7 @@ impl<'src> SemanticAnalysis<'src> {
                 lang::sym::Variable {
                     mutable: param.mutable,
                     name: param.ident.name,
-                    ty: param.ty.0.clone(),
+                    ty: param.ty.specifier.clone(),
                     span: param.span,
                 },
             );
@@ -159,31 +159,31 @@ impl<'src> SemanticAnalysis<'src> {
     pub fn check_struct(&mut self, structure: &mut ast::Struct<'src>) {
         for field in &mut structure.fields {
             // Void type is not allowed for struct fields.
-            if field.ty.is_void() {
+            if field.ty.specifier.is_void() {
                 self.errors
-                    .emit_void_field_declaration_error(field.ty.span(), field);
-                field.ty.0 = lang::ty::Type::Unknown;
+                    .emit_void_field_declaration_error(field.ty.span, field);
+                field.ty.specifier = lang::ty::TypeSpecifier::Unknown;
             }
 
             // Special checks for fields that are structs.
-            if let lang::ty::Type::Struct(name) = &field.ty.0 {
+            if let lang::ty::TypeSpecifier::Struct(name) = &field.ty.specifier {
                 // Check in the type table if the struct type exists.
                 if !self.types.struct_exists(name) {
                     self.errors
-                        .emit_unknown_type_error(field.ty.span(), &field.ty.0);
-                    field.ty.0 = lang::ty::Type::Unknown;
+                        .emit_unknown_type_error(field.ty.span, &field.ty.specifier);
+                    field.ty.specifier = lang::ty::TypeSpecifier::Unknown;
                 }
 
                 // Recursive struct definitions are not allowed to prevent infinite size types.
                 // We check if the field type is the same as the struct being defined, but we
                 // also need to consider indirect recursion involving other structs.
-                if self.check_indirect_recursion(&field.ty.0, &structure.ident.name) {
+                if self.check_indirect_recursion(&field.ty.specifier, &structure.ident.name) {
                     self.errors.emit_infinite_struct_size_error(
                         &structure.ident.name,
                         structure.ident.span,
-                        field.ty.span(),
+                        field.ty.span,
                     );
-                    field.ty.0 = lang::ty::Type::Unknown;
+                    field.ty.specifier = lang::ty::TypeSpecifier::Unknown;
                 }
             }
         }
@@ -192,9 +192,9 @@ impl<'src> SemanticAnalysis<'src> {
     /// Check for indirect recursion in struct definitions. This function will recursively
     /// traverse struct field types to see if any of them eventually reference the original
     /// struct being defined.
-    fn check_indirect_recursion(&self, ty: &lang::ty::Type, struct_name: &str) -> bool {
+    fn check_indirect_recursion(&self, ty: &lang::ty::TypeSpecifier, struct_name: &str) -> bool {
         match ty {
-            lang::ty::Type::Struct(name) => {
+            lang::ty::TypeSpecifier::Struct(name) => {
                 if name == struct_name {
                     return true;
                 }
@@ -207,7 +207,7 @@ impl<'src> SemanticAnalysis<'src> {
                 }
                 false
             }
-            lang::ty::Type::Array(ty, _) => self.check_indirect_recursion(ty, struct_name),
+            lang::ty::TypeSpecifier::Array(ty, _) => self.check_indirect_recursion(ty, struct_name),
             _ => false,
         }
     }

@@ -6,10 +6,10 @@ use crate::{BinaryOp, UnaryOp};
 
 /// The types supported by the language.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
+pub enum TypeSpecifier {
     /// An array type. The first element is the type of the elements in the array, and the second
     /// element is the size of the array. All elements in the array must have the same type.
-    Array(Box<Type>, u64),
+    Array(Box<TypeSpecifier>, u64),
 
     /// A struct type. Currently, structs are identified by their name only, and field types are
     /// stored in the `TypeMetadata` associated with the struct type.
@@ -35,41 +35,53 @@ pub enum Type {
     Unknown,
 }
 
-impl Type {
+impl TypeSpecifier {
+    /// The `void` type specifier.
+    pub const VOID: TypeSpecifier = TypeSpecifier::Builtin(BuiltinType::Void);
+
+    /// The `bool` type specifier.
+    pub const BOOL: TypeSpecifier = TypeSpecifier::Builtin(BuiltinType::Bool);
+
+    /// The `int` type specifier.
+    pub const INT: TypeSpecifier = TypeSpecifier::Builtin(BuiltinType::Int);
+
+    /// The `str` type specifier.
+    pub const STR: TypeSpecifier = TypeSpecifier::Builtin(BuiltinType::Str);
+
     /// Check if the type is valid, meaning it is not `Unknown` or `Infer`.
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        !matches!(self, Type::Unknown | Type::Infer)
+        !matches!(self, TypeSpecifier::Unknown | TypeSpecifier::Infer)
     }
 
     /// Check if the type is the `void` type.
     #[must_use]
     pub fn is_void(&self) -> bool {
-        matches!(self, Type::Builtin(BuiltinType::Void))
+        matches!(self, TypeSpecifier::Builtin(BuiltinType::Void))
     }
 
     /// Check if the type is a boolean type.
     #[must_use]
     pub fn is_boolean(&self) -> bool {
-        matches!(self, Type::Builtin(BuiltinType::Bool))
+        matches!(self, TypeSpecifier::Builtin(BuiltinType::Bool))
     }
 
     /// Check if the type is a struct type.
     #[must_use]
     pub fn is_struct(&self) -> bool {
-        matches!(self, Type::Struct(_))
+        matches!(self, TypeSpecifier::Struct(_))
     }
 
     /// Check if the type is an array type.
     #[must_use]
     pub fn is_array(&self) -> bool {
-        matches!(self, Type::Array(_, _))
+        matches!(self, TypeSpecifier::Array(_, _))
     }
 
     /// If the type is a struct, return its name. Otherwise, return `None`.
     #[must_use]
     pub fn as_struct_name(&self) -> Option<&str> {
-        if let Type::Struct(name) = self {
+        if let TypeSpecifier::Struct(name) = self {
             Some(name)
         } else {
             None
@@ -77,19 +89,19 @@ impl Type {
     }
 }
 
-impl core::fmt::Display for Type {
+impl core::fmt::Display for TypeSpecifier {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Type::Array(ty, len) => write!(f, "{}[{}]", ty, len),
-            Type::Struct(name) => write!(f, "struct {}", name),
-            Type::Builtin(ty) => match ty {
+            TypeSpecifier::Array(ty, len) => write!(f, "{}[{}]", ty, len),
+            TypeSpecifier::Struct(name) => write!(f, "struct {}", name),
+            TypeSpecifier::Builtin(ty) => match ty {
                 BuiltinType::Bool => write!(f, "bool"),
                 BuiltinType::Int => write!(f, "int"),
                 BuiltinType::Str => write!(f, "str"),
                 BuiltinType::Void => write!(f, "void"),
             },
-            Type::Infer => write!(f, "<infer>"),
-            Type::Unknown => write!(f, "<unknown>"),
+            TypeSpecifier::Infer => write!(f, "<infer>"),
+            TypeSpecifier::Unknown => write!(f, "<unknown>"),
         }
     }
 }
@@ -142,24 +154,24 @@ impl TypeTable {
     /// This function will panic if the type does not exist, for example, if it's a struct type
     /// that is not defined in the `TypeTable`.
     #[must_use]
-    pub fn support_binary_op(&self, op: BinaryOp, ty: &Type) -> bool {
+    pub fn support_binary_op(&self, op: BinaryOp, ty: &TypeSpecifier) -> bool {
         match ty {
-            Type::Builtin(builtin_ty) => {
+            TypeSpecifier::Builtin(builtin_ty) => {
                 let metadata = BuiltinMetadata::from(*builtin_ty);
                 metadata.supported_binary_ops().contains(&op)
             }
-            Type::Struct(name) => {
+            TypeSpecifier::Struct(name) => {
                 let metadata = self
                     .get_struct_metadata(name)
                     .expect("Struct type not found");
                 metadata.supported_binary_ops().contains(&op)
             }
-            Type::Array(ty, len) => {
+            TypeSpecifier::Array(ty, len) => {
                 let metadata = ArrayMetadata::from((ty.clone(), *len));
                 metadata.supported_binary_ops().contains(&op)
             }
-            Type::Infer => false,
-            Type::Unknown => false,
+            TypeSpecifier::Infer => false,
+            TypeSpecifier::Unknown => false,
         }
     }
 
@@ -169,31 +181,31 @@ impl TypeTable {
     /// This function will panic if the type does not exist, for example, if it's a struct type
     /// that is not defined in the `TypeTable`.
     #[must_use]
-    pub fn support_unary_op(&self, op: UnaryOp, ty: &Type) -> bool {
+    pub fn support_unary_op(&self, op: UnaryOp, ty: &TypeSpecifier) -> bool {
         match ty {
-            Type::Builtin(builtin_ty) => {
+            TypeSpecifier::Builtin(builtin_ty) => {
                 let metadata = BuiltinMetadata::from(*builtin_ty);
                 metadata.supported_unary_ops().contains(&op)
             }
-            Type::Struct(name) => {
+            TypeSpecifier::Struct(name) => {
                 let metadata = self
                     .get_struct_metadata(name)
                     .expect("Struct type not found");
                 metadata.supported_unary_ops().contains(&op)
             }
-            Type::Array(ty, len) => {
+            TypeSpecifier::Array(ty, len) => {
                 let metadata = ArrayMetadata::from((ty.clone(), *len));
                 metadata.supported_unary_ops().contains(&op)
             }
-            Type::Unknown | Type::Infer => false,
+            TypeSpecifier::Unknown | TypeSpecifier::Infer => false,
         }
     }
 
     /// Return fields of the type. If this is not applicable to the type, return `None`.
     #[must_use]
-    pub fn fields_of(&self, ty: &Type) -> Option<&HashMap<String, Type>> {
+    pub fn fields_of(&self, ty: &TypeSpecifier) -> Option<&HashMap<String, TypeSpecifier>> {
         match ty {
-            Type::Struct(name) => {
+            TypeSpecifier::Struct(name) => {
                 let metadata = self.get_struct_metadata(name)?;
                 metadata.fields()
             }
@@ -204,7 +216,7 @@ impl TypeTable {
     /// Get the type of a field by its name for the given type. Returns `None` if the field
     /// does not exist or if the type does not have fields.
     #[must_use]
-    pub fn get_field(&self, ty: &Type, name: &str) -> Option<&Type> {
+    pub fn get_field(&self, ty: &TypeSpecifier, name: &str) -> Option<&TypeSpecifier> {
         if let Some(fields) = self.fields_of(ty) {
             fields.get(name)
         } else {
@@ -214,7 +226,7 @@ impl TypeTable {
 
     /// Check if the type has a field with the given name.
     #[must_use]
-    pub fn has_field(&self, ty: &Type, name: &str) -> bool {
+    pub fn has_field(&self, ty: &TypeSpecifier, name: &str) -> bool {
         self.get_field(ty, name).is_some()
     }
 }
@@ -230,7 +242,7 @@ pub trait TypeMetadata {
     /// Returns the fields of the type if applicable. By default, returns `None`, indicating that
     /// the type does not have fields.
     #[must_use]
-    fn fields(&self) -> Option<&HashMap<String, Type>> {
+    fn fields(&self) -> Option<&HashMap<String, TypeSpecifier>> {
         None
     }
 }
@@ -243,7 +255,7 @@ pub struct StructMetadata {
     pub fields_order: Vec<String>,
 
     /// A mapping from field names to their types.
-    pub fields: HashMap<String, Type>,
+    pub fields: HashMap<String, TypeSpecifier>,
 
     /// The span where the struct is defined. This is useful for error reporting.
     pub span: Span,
@@ -252,7 +264,11 @@ pub struct StructMetadata {
 impl StructMetadata {
     /// Create a new `StructMetadata` with the given fields.
     #[must_use]
-    pub fn new(fields_order: Vec<String>, fields: HashMap<String, Type>, span: Span) -> Self {
+    pub fn new(
+        fields_order: Vec<String>,
+        fields: HashMap<String, TypeSpecifier>,
+        span: Span,
+    ) -> Self {
         Self {
             fields_order,
             fields,
@@ -262,7 +278,7 @@ impl StructMetadata {
 
     /// Get the type of a field by its index. Returns `None` if the index is out of bounds.
     #[must_use]
-    pub fn get_field_type_by_index(&self, index: usize) -> Option<&Type> {
+    pub fn get_field_type_by_index(&self, index: usize) -> Option<&TypeSpecifier> {
         if let Some(field_name) = self.fields_order.get(index) {
             self.fields.get(field_name)
         } else {
@@ -272,7 +288,7 @@ impl StructMetadata {
 
     /// Get the type of a field by its name. Returns `None` if the field does not exist.
     #[must_use]
-    pub fn get_field_type(&self, field_name: &str) -> Option<&Type> {
+    pub fn get_field_type(&self, field_name: &str) -> Option<&TypeSpecifier> {
         self.fields.get(field_name)
     }
 
@@ -292,7 +308,7 @@ impl TypeMetadata for StructMetadata {
         vec![]
     }
 
-    fn fields(&self) -> Option<&HashMap<String, Type>> {
+    fn fields(&self) -> Option<&HashMap<String, TypeSpecifier>> {
         Some(&self.fields)
     }
 }
@@ -301,14 +317,14 @@ impl TypeMetadata for StructMetadata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArrayMetadata {
     /// The type of the elements in the array.
-    pub element_ty: Box<Type>,
+    pub element_ty: Box<TypeSpecifier>,
 
     /// The number of elements in the array.
     pub size: u64,
 }
 
-impl From<(Box<Type>, u64)> for ArrayMetadata {
-    fn from((element_ty, size): (Box<Type>, u64)) -> Self {
+impl From<(Box<TypeSpecifier>, u64)> for ArrayMetadata {
+    fn from((element_ty, size): (Box<TypeSpecifier>, u64)) -> Self {
         Self { element_ty, size }
     }
 }

@@ -137,7 +137,7 @@ impl<'a> Codegen<'a> {
     /// name and parameters. If the `prototype` flag is set to `true`, the function will
     /// add a semicolon at the end of the function declaration.
     pub fn generate_fn_header(&mut self, func: &ast::Function, prototype: bool) {
-        let ret = Self::generate_type(&func.prototype.ret);
+        let ret = Self::generate_type(&func.prototype.ret.specifier);
         let mut code = String::new();
 
         // Generate the function return type and name
@@ -153,7 +153,7 @@ impl<'a> Codegen<'a> {
             .iter()
             .map(|param| {
                 let mutable = if !param.mutable { "const " } else { "" };
-                let TypeInfo { ctype, postfix } = Self::generate_type(&param.ty);
+                let TypeInfo { ctype, postfix } = Self::generate_type(&param.ty.specifier);
                 let name = &param.ident.name;
                 format!("{mutable}{ctype} {name}{postfix}")
             })
@@ -215,7 +215,7 @@ impl<'a> Codegen<'a> {
         for field in &strct.fields {
             // Ensure that the referenced struct is generated before being used to
             // avoid incomplete type compilation errors.
-            if let lang::ty::Type::Struct(name) = &field.ty.0 {
+            if let lang::ty::TypeSpecifier::Struct(name) = &field.ty.specifier {
                 let strct = structures
                     .iter()
                     .find_map(|item| {
@@ -229,7 +229,7 @@ impl<'a> Codegen<'a> {
                     .expect("Struct type not found in the program");
                 self.generate_struct(structures, strct);
             }
-            let TypeInfo { ctype, postfix } = Codegen::generate_type(&field.ty);
+            let TypeInfo { ctype, postfix } = Codegen::generate_type(&field.ty.specifier);
             typedefs += &format!("\t{} {}{};\n", ctype, field.ident.name, postfix);
         }
         typedefs += "};\n";
@@ -253,7 +253,7 @@ impl<'a> Codegen<'a> {
             }
             ast::StmtKind::Var(ident, ty, expr, mutable) => {
                 let mutable = if *mutable { "" } else { "const " };
-                let TypeInfo { ctype, postfix } = Self::generate_type(ty);
+                let TypeInfo { ctype, postfix } = Self::generate_type(&ty.specifier);
                 let value = self.generate_expr(expr, false);
                 format!(
                     "{mutable}{ctype} {ident}{postfix} = {value};",
@@ -419,20 +419,20 @@ impl<'a> Codegen<'a> {
     ///    generated code, since it represents an value that can never be
     ///    constructed.
     #[must_use]
-    pub fn generate_type(ty: &lang::ty::Type) -> TypeInfo {
+    pub fn generate_type(ty: &lang::ty::TypeSpecifier) -> TypeInfo {
         match ty {
-            lang::ty::Type::Struct(name) => TypeInfo::simple(format!("struct {}", name)),
-            lang::ty::Type::Array(ty, len) => {
+            lang::ty::TypeSpecifier::Struct(name) => TypeInfo::simple(format!("struct {}", name)),
+            lang::ty::TypeSpecifier::Array(ty, len) => {
                 let ctype = Self::generate_type(ty);
                 TypeInfo::array(ctype.ctype, *len)
             }
-            lang::ty::Type::Builtin(ty) => match ty {
+            lang::ty::TypeSpecifier::Builtin(ty) => match ty {
                 lang::ty::BuiltinType::Void => TypeInfo::simple("void".to_string()),
                 lang::ty::BuiltinType::Str => TypeInfo::simple("char *".to_string()),
                 lang::ty::BuiltinType::Bool => TypeInfo::simple("bool".to_string()),
                 lang::ty::BuiltinType::Int => TypeInfo::simple("int".to_string()),
             },
-            lang::ty::Type::Infer | lang::ty::Type::Unknown => {
+            lang::ty::TypeSpecifier::Infer | lang::ty::TypeSpecifier::Unknown => {
                 unreachable!("Type::Infer should not appear in the code generation phase")
             }
         }

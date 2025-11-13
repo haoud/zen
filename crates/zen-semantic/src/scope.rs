@@ -147,7 +147,7 @@ impl<'src> Scope<'src> {
                 .map(|param| lang::sym::Variable {
                     mutable: param.mutable,
                     name: param.ident.name,
-                    ty: param.ty.0.clone(),
+                    ty: param.ty.specifier.clone(),
                     span: param.span,
                 })
                 .collect::<Vec<_>>();
@@ -156,7 +156,7 @@ impl<'src> Scope<'src> {
                 .symbols_mut()
                 .insert_function(lang::sym::Function {
                     name: func.prototype.ident.name,
-                    ret: func.prototype.ret.0.clone(),
+                    ret: func.prototype.ret.specifier.clone(),
                     span: func.span,
                     params,
                 });

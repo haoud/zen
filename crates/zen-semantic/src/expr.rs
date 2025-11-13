@@ -111,7 +111,7 @@ impl<'src> SemanticAnalysis<'src> {
                             self.errors.emit_intrinsic_argument_type_mismatch_error(
                                 ident,
                                 &args[0],
-                                lang::ty::Type::Builtin(lang::ty::BuiltinType::Str),
+                                lang::ty::TypeSpecifier::Builtin(lang::ty::BuiltinType::Str),
                             );
                             return;
                         };
@@ -142,13 +142,13 @@ impl<'src> SemanticAnalysis<'src> {
             ast::ExprKind::Literal(x) => {
                 // Ensure that integer literals fit within the bounds of the integer type.
                 match &x.ty {
-                    lang::ty::Type::Array(_, _) => {
+                    lang::ty::TypeSpecifier::Array(_, _) => {
                         unreachable!("Array literals should be represented as List expressions")
                     }
-                    lang::ty::Type::Struct(_) => {
+                    lang::ty::TypeSpecifier::Struct(_) => {
                         unreachable!("Struct literals should be represented as field initializers")
                     }
-                    lang::ty::Type::Builtin(ty) => match ty {
+                    lang::ty::TypeSpecifier::Builtin(ty) => match ty {
                         lang::ty::BuiltinType::Int => {
                             if x.value.parse_i64(negated).is_err() {
                                 self.errors.emit_literal_overflow_error(x);
@@ -168,7 +168,7 @@ impl<'src> SemanticAnalysis<'src> {
                             )
                         }
                     },
-                    lang::ty::Type::Infer | lang::ty::Type::Unknown => {
+                    lang::ty::TypeSpecifier::Infer | lang::ty::TypeSpecifier::Unknown => {
                         unreachable!("Literal types should be inferred during type inference")
                     }
                 }
@@ -202,9 +202,9 @@ impl<'src> SemanticAnalysis<'src> {
     /// This function will panic if it encounters an `ast::ExprKind::Error`, as such expressions
     /// should not appear during type inference, or if an expression's type is still `Infer` but
     /// should have been determined during parsing (e.g., string or boolean literals).
-    pub fn infer_expr(&mut self, expr: &mut ast::Expr<'src>, target: Option<&lang::ty::Type>) {
+    pub fn infer_expr(&mut self, expr: &mut ast::Expr<'src>, target: Option<&lang::ty::TypeSpecifier>) {
         // The expression's type is already known, so no inference is needed.
-        if expr.ty != lang::ty::Type::Infer {
+        if expr.ty != lang::ty::TypeSpecifier::Infer {
             return;
         }
 
@@ -224,7 +224,7 @@ impl<'src> SemanticAnalysis<'src> {
                     | lang::BinaryOp::Gt
                     | lang::BinaryOp::Gte => {
                         // Logical and comparison operators always yield a boolean result.
-                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Bool);
+                        expr.ty = lang::ty::TypeSpecifier::Builtin(lang::ty::BuiltinType::Bool);
                     }
 
                     lang::BinaryOp::Add
@@ -235,10 +235,10 @@ impl<'src> SemanticAnalysis<'src> {
                         // to that. However, if either side is still `Infer` or doesn't match,
                         // we set the type to `Unknown` to indicate a type inference failure.
                         // TODO: Implement proper type coercion rules here.
-                        if lhs.ty == rhs.ty && lhs.ty != lang::ty::Type::Infer {
+                        if lhs.ty == rhs.ty && lhs.ty != lang::ty::TypeSpecifier::Infer {
                             expr.ty = lhs.ty.clone();
                         } else {
-                            expr.ty = lang::ty::Type::Unknown;
+                            expr.ty = lang::ty::TypeSpecifier::Unknown;
                         }
                     }
                 }
@@ -252,7 +252,7 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                     lang::UnaryOp::Not => {
                         // Logical NOT operator always yields a boolean result.
-                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Bool);
+                        expr.ty = lang::ty::TypeSpecifier::Builtin(lang::ty::BuiltinType::Bool);
                     }
                 }
             }
@@ -268,7 +268,7 @@ impl<'src> SemanticAnalysis<'src> {
                     // If the function is not found, we set the expression's type to `Unknown`
                     // but we do not emit an error here, as the function call will be checked
                     // later in the `check_expr` method that will handle the error reporting.
-                    expr.ty = lang::ty::Type::Unknown;
+                    expr.ty = lang::ty::TypeSpecifier::Unknown;
                 }
             }
             ast::ExprKind::Identifier(identifier) => {
@@ -282,7 +282,7 @@ impl<'src> SemanticAnalysis<'src> {
                     expr.ty = var.ty.clone();
                 } else {
                     self.errors.emit_undefined_identifier_error(identifier);
-                    expr.ty = lang::ty::Type::Unknown;
+                    expr.ty = lang::ty::TypeSpecifier::Unknown;
                 }
             }
             ast::ExprKind::IntrinsicCall(identifier, args) => {
@@ -295,9 +295,9 @@ impl<'src> SemanticAnalysis<'src> {
                     // Set the types for known intrinsic functions. If an intrinsic is not listed
                     // here, we default to `Unknown` type.
                     "println" | "print" => {
-                        expr.ty = lang::ty::Type::Builtin(lang::ty::BuiltinType::Void);
+                        expr.ty = lang::ty::TypeSpecifier::Builtin(lang::ty::BuiltinType::Void);
                     }
-                    _ => expr.ty = lang::ty::Type::Unknown,
+                    _ => expr.ty = lang::ty::TypeSpecifier::Unknown,
                 }
             }
             ast::ExprKind::List(items) => {
@@ -314,12 +314,12 @@ impl<'src> SemanticAnalysis<'src> {
                     // If all items are of the same type, the list type is an array of that type.
                     if let Some(first) = items.first() {
                         if items.iter().all(|item| item.ty == first.ty) {
-                            expr.ty = lang::ty::Type::Array(
+                            expr.ty = lang::ty::TypeSpecifier::Array(
                                 Box::new(first.ty.clone()),
                                 items.len() as u64,
                             );
                         } else {
-                            expr.ty = lang::ty::Type::Unknown;
+                            expr.ty = lang::ty::TypeSpecifier::Unknown;
                         }
                     } else {
                         todo!("Implement empty list type inference");
@@ -334,7 +334,7 @@ impl<'src> SemanticAnalysis<'src> {
                 // do not emit an error here, as the inference failure should have already emitted
                 // an error earlier.
                 if !expression.ty.is_valid() {
-                    expr.ty = lang::ty::Type::Unknown;
+                    expr.ty = lang::ty::TypeSpecifier::Unknown;
                     return;
                 }
 
@@ -349,7 +349,7 @@ impl<'src> SemanticAnalysis<'src> {
                         &expression.ty,
                         expression.span,
                     );
-                    expr.ty = lang::ty::Type::Unknown;
+                    expr.ty = lang::ty::TypeSpecifier::Unknown;
                 }
             }
             ast::ExprKind::Literal(_) => {
@@ -374,11 +374,11 @@ impl<'src> SemanticAnalysis<'src> {
     pub fn infer_list_items(
         &mut self,
         items: &mut [ast::Expr<'src>],
-        target: &lang::ty::Type,
+        target: &lang::ty::TypeSpecifier,
         span: Span,
-    ) -> lang::ty::Type {
+    ) -> lang::ty::TypeSpecifier {
         match target {
-            lang::ty::Type::Array(ty, len) => {
+            lang::ty::TypeSpecifier::Array(ty, len) => {
                 // If the target type is an array, we can infer the item types based on the
                 // array's element type and length.
                 let mut same_length = true;
@@ -406,15 +406,15 @@ impl<'src> SemanticAnalysis<'src> {
                 // later.
                 if same_type {
                     if same_length {
-                        return lang::ty::Type::Array(ty.clone(), *len);
+                        return lang::ty::TypeSpecifier::Array(ty.clone(), *len);
                     } else {
-                        return lang::ty::Type::Array(ty.clone(), items.len() as u64);
+                        return lang::ty::TypeSpecifier::Array(ty.clone(), items.len() as u64);
                     }
                 }
 
-                return lang::ty::Type::Unknown;
+                return lang::ty::TypeSpecifier::Unknown;
             }
-            lang::ty::Type::Struct(name) => {
+            lang::ty::TypeSpecifier::Struct(name) => {
                 // If the target type is a structure, we can infer the item types based on the
                 // structure's field types.
                 if let Some(structure) = self.types.get_struct_metadata(name).cloned() {
@@ -453,12 +453,12 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
             }
-            lang::ty::Type::Builtin(ty) => {
+            lang::ty::TypeSpecifier::Builtin(ty) => {
                 // For built-in types, we can only infer the item type if there is exactly one item
                 // in the list. We infer that item's type to be the built-in type and check if it
                 // matches the target type.
                 if let Some(item) = items.first_mut() {
-                    self.infer_expr(item, Some(&lang::ty::Type::Builtin(*ty)));
+                    self.infer_expr(item, Some(&lang::ty::TypeSpecifier::Builtin(*ty)));
                     if item.ty == *target {
                         if items.len() == 1 {
                             return target.clone();
@@ -472,11 +472,11 @@ impl<'src> SemanticAnalysis<'src> {
                     }
                 }
             }
-            lang::ty::Type::Infer | lang::ty::Type::Unknown => {
+            lang::ty::TypeSpecifier::Infer | lang::ty::TypeSpecifier::Unknown => {
                 // If the target type is `Infer` or `Unknown`, we cannot infer item types, so we
                 // skip inference for each item.
             }
         }
-        lang::ty::Type::Unknown
+        lang::ty::TypeSpecifier::Unknown
     }
 }

@@ -1,7 +1,7 @@
 use ast::TopLevelItemKind;
 use chumsky::{input::ValueInput, prelude::*};
-use lang::ty::{BuiltinType, Type};
-use span::{Span, Spanned};
+use lang::ty::TypeSpecifier;
+use span::Span;
 
 pub mod atoms;
 
@@ -143,7 +143,7 @@ where
             )
             .map_with(|stmts, e| ast::Block {
                 stmts,
-                ty: lang::ty::Type::Infer,
+                ty: lang::ty::TypeSpecifier::Infer,
                 span: e.span(),
             });
 
@@ -169,7 +169,10 @@ where
             .map_with(|((ident, ty), expr), e| ast::Stmt {
                 kind: ast::StmtKind::Var(
                     ident,
-                    ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
+                    ty.unwrap_or(ast::Type {
+                        specifier: lang::ty::TypeSpecifier::Infer,
+                        span: Span::default(),
+                    }),
                     Box::new(expr),
                     false,
                 ),
@@ -189,7 +192,10 @@ where
             .map_with(|((ident, ty), expr), e| ast::Stmt {
                 kind: ast::StmtKind::Var(
                     ident,
-                    ty.unwrap_or(Spanned::none(lang::ty::Type::Infer)),
+                    ty.unwrap_or(ast::Type {
+                        specifier: lang::ty::TypeSpecifier::Infer,
+                        span: Span::default(),
+                    }),
                     Box::new(expr),
                     true,
                 ),
@@ -276,7 +282,7 @@ where
         // enclosed in double quotes.
         let string = atoms::string_value_parser().map_with(|s, e| ast::Expr {
             kind: ast::ExprKind::String(s),
-            ty: Type::Builtin(BuiltinType::Str),
+            ty: TypeSpecifier::STR,
             span: e.span(),
         });
 
@@ -284,7 +290,7 @@ where
         // Identifiers are used to name variables, functions, classes, etc.
         let identifier = atoms::identifier_parser().map_with(|ident, e| ast::Expr {
             kind: ast::ExprKind::Identifier(ident),
-            ty: lang::ty::Type::Infer,
+            ty: lang::ty::TypeSpecifier::Infer,
             span: e.span(),
         });
 
@@ -305,7 +311,7 @@ where
             )
             .map_with(|elements, e| ast::Expr {
                 kind: ast::ExprKind::List(elements),
-                ty: lang::ty::Type::Infer,
+                ty: lang::ty::TypeSpecifier::Infer,
                 span: e.span(),
             });
 
@@ -320,7 +326,7 @@ where
             ))
             .map_with(|(function, args), e| ast::Expr {
                 kind: ast::ExprKind::FunctionCall(Box::new(function), args),
-                ty: lang::ty::Type::Infer,
+                ty: lang::ty::TypeSpecifier::Infer,
                 span: e.span(),
             })
             .boxed();
@@ -336,7 +342,7 @@ where
             ))
             .map_with(|(function, args), e| ast::Expr {
                 kind: ast::ExprKind::IntrinsicCall(Box::new(function), args),
-                ty: lang::ty::Type::Infer,
+                ty: lang::ty::TypeSpecifier::Infer,
                 span: e.span(),
             })
             .boxed();
@@ -347,7 +353,7 @@ where
         let atom = atoms::number_parser()
             .map_with(|lit, e| ast::Expr {
                 kind: ast::ExprKind::Literal(lit),
-                ty: Type::Builtin(BuiltinType::Int),
+                ty: TypeSpecifier::INT,
                 span: e.span(),
             })
             .or(list)
@@ -380,7 +386,7 @@ where
                     .repeated(),
                 |base, field, e| ast::Expr {
                     kind: ast::ExprKind::FieldAccess(Box::new(base), field),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -391,7 +397,7 @@ where
             .repeated()
             .foldr_with(dot_operator, |op, rhs, e| ast::Expr {
                 kind: ast::ExprKind::Unary(op, Box::new(rhs)),
-                ty: lang::ty::Type::Infer,
+                ty: lang::ty::TypeSpecifier::Infer,
                 span: e.span(),
             })
             .boxed();
@@ -403,7 +409,7 @@ where
                 atoms::product_ops().then(unary).repeated(),
                 |lhs, (op, rhs), e| ast::Expr {
                     kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -416,7 +422,7 @@ where
                 atoms::sum_ops().then(product).repeated(),
                 |lhs, (op, rhs), e| ast::Expr {
                     kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -429,7 +435,7 @@ where
                 atoms::relational_ops().then(sum).repeated(),
                 |lhs, (op, rhs), e| ast::Expr {
                     kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -442,7 +448,7 @@ where
                 atoms::logical_and_ops().then(relational_ops).repeated(),
                 |lhs, (op, rhs), e| ast::Expr {
                     kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -455,7 +461,7 @@ where
                 atoms::logical_or_ops().then(logical_and).repeated(),
                 |lhs, (op, rhs), e| ast::Expr {
                     kind: ast::ExprKind::Binary(op, Box::new(lhs), Box::new(rhs)),
-                    ty: lang::ty::Type::Infer,
+                    ty: lang::ty::TypeSpecifier::Infer,
                     span: e.span(),
                 },
             )
@@ -469,14 +475,17 @@ where
 /// `bool`, `int`, `str`, `void`, and array types like `<type>[<size>]`.
 #[must_use]
 pub fn type_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<lang::ty::Type>, ParserError<'tokens, 'src>> + Clone
+-> impl Parser<'tokens, I, ast::Type, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     // A struct type is of the form `struct <ident>`, where `<ident>` is the name of the struct.
     let strct = just(lexer::Token::Keyword("struct"))
         .ignore_then(atoms::identifier_parser())
-        .map_with(|name, e| Spanned::new(lang::ty::Type::Struct(name.name.to_string()), e.span()));
+        .map_with(|name, e| ast::Type {
+            specifier: lang::ty::TypeSpecifier::Struct(name.name.to_string()),
+            span: e.span(),
+        });
 
     // An array type is of the form `<type>[<size>]`, where `<type>` is a built-in type
     // and `<size>` is a number literal representing the size of the array.
@@ -510,8 +519,9 @@ where
             }),
         )
         .then_ignore(just(lexer::Token::Delimiter("]")))
-        .map_with(|(ty, count), e| {
-            Spanned::new(lang::ty::Type::Array(Box::new(ty.0), count), e.span())
+        .map_with(|(ty, count), e| ast::Type {
+            specifier: lang::ty::TypeSpecifier::Array(Box::new(ty.specifier), count),
+            span: e.span(),
         });
 
     choice((strct, array, atoms::builtin_type_parser())).boxed()

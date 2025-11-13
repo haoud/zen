@@ -250,7 +250,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         proto: &ast::FunctionPrototype<'src>,
         ret_expr_span: Span,
-        ret_type: &lang::ty::Type,
+        ret_type: &lang::ty::TypeSpecifier,
     ) {
         self.errors.push(
             ariadne::Report::build(
@@ -260,8 +260,8 @@ impl<'src> SemanticDiagnostic<'src> {
             .with_code(SemanticErrorKind::ReturnTypeMismatch as u32)
             .with_message(format!("return type mismatch"))
             .with_label(
-                ariadne::Label::new((self.filename, proto.ret.span().into_range()))
-                    .with_message(format!("Expected return type '{}'", proto.ret.0))
+                ariadne::Label::new((self.filename, proto.ret.span.into_range()))
+                    .with_message(format!("Expected return type '{}'", proto.ret.specifier))
                     .with_color(Color::Cyan),
             )
             .with_label(
@@ -355,7 +355,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_variable_definition_type_mismatch_error(
         &mut self,
         expr: &ast::Expr<'src>,
-        ty: &Spanned<lang::ty::Type>,
+        ty: Spanned<&lang::ty::TypeSpecifier>,
         stmt_span: Span,
     ) {
         self.errors.push(
@@ -431,9 +431,9 @@ impl<'src> SemanticDiagnostic<'src> {
     #[cold]
     pub fn emit_type_mismatch_in_assignment_error(
         &mut self,
-        lvalue_ty: &lang::ty::Type,
+        lvalue_ty: &lang::ty::TypeSpecifier,
         lvalue_span: Span,
-        expr_ty: &lang::ty::Type,
+        expr_ty: &lang::ty::TypeSpecifier,
         expr_span: Span,
         stmt_span: Span,
     ) {
@@ -610,7 +610,7 @@ impl<'src> SemanticDiagnostic<'src> {
                     ariadne::Label::new((self.filename, fn_span.into_range()))
                         .with_message(format!(
                             "function '{}' must return a value of type '{}'",
-                            proto.ident.name, proto.ret.0
+                            proto.ident.name, proto.ret.specifier
                         ))
                         .with_color(Color::Red),
                 )
@@ -663,7 +663,7 @@ impl<'src> SemanticDiagnostic<'src> {
                     ariadne::Label::new((self.filename, proto.span.into_range()))
                         .with_message(format!(
                             "function '{}' expects return type '{}'",
-                            proto.ident.name, proto.ret.0
+                            proto.ident.name, proto.ret.specifier
                         ))
                         .with_color(Color::Cyan),
                 )
@@ -747,7 +747,7 @@ impl<'src> SemanticDiagnostic<'src> {
         &mut self,
         identifier: &ast::Identifier<'src>,
         expr: &ast::Expr<'src>,
-        expected: lang::ty::Type,
+        expected: lang::ty::TypeSpecifier,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, expr.span.into_range()))
@@ -806,7 +806,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_incompatible_types_in_initializer_list_error(
         &mut self,
         elem: &ast::Expr<'src>,
-        expected: &lang::ty::Type,
+        expected: &lang::ty::TypeSpecifier,
     ) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, elem.span.into_range()))
@@ -855,7 +855,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_invalid_binary_operation_for_type_error(
         &mut self,
         op: lang::BinaryOp,
-        ty: &lang::ty::Type,
+        ty: &lang::ty::TypeSpecifier,
         span: Span,
     ) {
         self.errors.push(
@@ -879,7 +879,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_invalid_unary_operation_for_type_error(
         &mut self,
         op: lang::UnaryOp,
-        ty: &lang::ty::Type,
+        ty: &lang::ty::TypeSpecifier,
         span: Span,
     ) {
         self.errors.push(
@@ -923,7 +923,7 @@ impl<'src> SemanticDiagnostic<'src> {
     pub fn emit_unknown_field_access_error(
         &mut self,
         field_name: &ast::Identifier<'src>,
-        ty: &lang::ty::Type,
+        ty: &lang::ty::TypeSpecifier,
         span: Span,
     ) {
         self.errors.push(
@@ -991,7 +991,7 @@ impl<'src> SemanticDiagnostic<'src> {
 
     /// Emit an error when an unknown type is used in a type annotation or declaration.
     #[cold]
-    pub fn emit_unknown_type_error(&mut self, ty_span: Span, ty: &lang::ty::Type) {
+    pub fn emit_unknown_type_error(&mut self, ty_span: Span, ty: &lang::ty::TypeSpecifier) {
         self.errors.push(
             ariadne::Report::build(ReportKind::Error, (self.filename, ty_span.into_range()))
                 .with_code(SemanticErrorKind::UnknownType as u32)

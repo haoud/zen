@@ -1,5 +1,5 @@
-use lang::{self, BinaryOp, UnaryOp, ty::Type};
-use span::{Span, Spanned};
+use lang::{self, BinaryOp, UnaryOp, ty::TypeSpecifier};
+use span::Span;
 
 /// A identifier. Identifiers are used to name variables, functions, and other
 /// entities in the language. Identifiers are sequences of letters, numbers,
@@ -24,7 +24,7 @@ pub struct Literal<'src> {
 
     /// The type of the literal. Most of the time, the type of the literal is
     /// inferred from the context in which it is used.
-    pub ty: Type,
+    pub ty: TypeSpecifier,
 
     /// The span of the literal in the source code.
     pub span: Span,
@@ -73,7 +73,7 @@ pub struct StructField<'src> {
     pub ident: Identifier<'src>,
 
     /// The type of the field.
-    pub ty: Spanned<Type>,
+    pub ty: Type,
 
     /// The span of the field in the source code.
     pub span: Span,
@@ -112,7 +112,7 @@ pub struct FunctionPrototype<'src> {
     pub params: Vec<FunctionParameter<'src>>,
 
     /// The return type of the function.
-    pub ret: Spanned<Type>,
+    pub ret: Type,
 
     /// The span of the function prototype in the source code.
     pub span: Span,
@@ -127,7 +127,7 @@ pub struct FunctionParameter<'src> {
     pub ident: Identifier<'src>,
 
     /// The type of the parameter.
-    pub ty: Spanned<Type>,
+    pub ty: Type,
 
     /// Whether the parameter is mutable or not.
     pub mutable: bool,
@@ -147,7 +147,7 @@ pub struct Block<'src> {
 
     /// The return type of the block. If the block does not have a return
     /// type, it is considered to have a return type of `void`.
-    pub ty: Type,
+    pub ty: TypeSpecifier,
 
     /// The span of the block in the source code.
     pub span: Span,
@@ -176,7 +176,7 @@ pub enum StmtKind<'src> {
     // element is the optional type annotation, the third element is the expression
     // being assigned to the identifier and the fourth element indicates whether the variable
     // is mutable or not.
-    Var(Identifier<'src>, Spanned<Type>, Box<Expr<'src>>, bool),
+    Var(Identifier<'src>, Type, Box<Expr<'src>>, bool),
 
     /// An assignment statement. The first element is an optional binary operator (for
     /// compound assignments like `+=`), the second element is the expression being assigned
@@ -214,7 +214,7 @@ pub struct Expr<'src> {
     pub kind: ExprKind<'src>,
 
     /// The type of the expression.
-    pub ty: Type,
+    pub ty: TypeSpecifier,
 
     /// The span of the expression in the source code.
     pub span: Span,
@@ -238,6 +238,7 @@ pub enum ExprKind<'src> {
     /// A field access. The first element is the expression being accessed, and the second
     /// element is the identifier of the field being accessed.
     FieldAccess(Box<Expr<'src>>, Identifier<'src>),
+
     /// A binary operation. The first element is the operator, the second element is the left-hand
     /// side expression, and the third element is the right-hand side expression.
     Binary(BinaryOp, Box<Expr<'src>>, Box<Expr<'src>>),
@@ -286,4 +287,15 @@ impl ExprKind<'_> {
             None
         }
     }
+}
+
+/// A type in the language. In the AST, types are represented by their specifiers (see
+/// `TypeSpecifier` in the `lang` crate) along with their span in the source code.
+#[derive(Debug, Clone)]
+pub struct Type {
+    /// The type specifier.
+    pub specifier: TypeSpecifier,
+
+    /// The span of the type in the source code.
+    pub span: Span,
 }

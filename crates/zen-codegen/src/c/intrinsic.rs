@@ -1,4 +1,4 @@
-use lang::ty::{BuiltinType, Type};
+use lang::ty::{BuiltinType, TypeSpecifier};
 
 use crate::c::Codegen;
 
@@ -12,7 +12,7 @@ impl Codegen<'_> {
             // Special handling for array types to generate each element's formatting argument
             // individually. This allow us to support directly passing array literals or identifiers
             // to formatting functions.
-            Type::Array(ty, size) => match &expr.kind {
+            TypeSpecifier::Array(ty, size) => match &expr.kind {
                 ast::ExprKind::List(items) => {
                     let elements = items
                         .iter()
@@ -22,7 +22,7 @@ impl Codegen<'_> {
                     format!("{}", elements)
                 }
                 ast::ExprKind::Identifier(ident) => match **ty {
-                    Type::Builtin(BuiltinType::Bool) => {
+                    TypeSpecifier::Builtin(BuiltinType::Bool) => {
                         let elements = (0..*size)
                             .map(|i| Self::emit_bool_to_str(&format!("{}[{}]", ident.name, i)))
                             .collect::<Vec<String>>()
@@ -44,7 +44,7 @@ impl Codegen<'_> {
             },
             // Special handling for boolean types to convert them to "true" or "false" strings
             // before passing them to the formatting function.
-            Type::Builtin(BuiltinType::Bool) => {
+            TypeSpecifier::Builtin(BuiltinType::Bool) => {
                 Self::emit_bool_to_str(&self.generate_expr(expr, false))
             }
             // For all other types, just generate the expression normally since they are natively
@@ -99,9 +99,9 @@ pub fn generate_fmt_string(fmt: &str, args: &[ast::Expr]) -> String {
 /// Panics if the type is `Unknown`, `Infer`, or `Void`, as `Unknown` and `Infer` types should not
 /// appear in the AST at this stage and `Void` type cannot be formatted and should only be used
 /// for functions that do not return a value.
-pub fn get_fmt_specifier(ty: &Type) -> String {
+pub fn get_fmt_specifier(ty: &TypeSpecifier) -> String {
     match ty {
-        Type::Array(ty, len) => {
+        TypeSpecifier::Array(ty, len) => {
             format!(
                 "[{}]",
                 (0..*len)
@@ -110,16 +110,16 @@ pub fn get_fmt_specifier(ty: &Type) -> String {
                     .join(", ")
             )
         }
-        Type::Struct(name) => {
+        TypeSpecifier::Struct(name) => {
             // TODO: Display struct fields properly and not just the struct name
             format!("struct {} {{ <todo> }}", name)
         }
-        Type::Builtin(ty) => match ty {
+        TypeSpecifier::Builtin(ty) => match ty {
             BuiltinType::Bool => "%s".to_owned(), // Booleans will be printed as "true" or "false"
             BuiltinType::Int => "%d".to_owned(),
             BuiltinType::Str => "\\\"%s\\\"".to_owned(),
             BuiltinType::Void => unreachable!(),
         },
-        Type::Infer | Type::Unknown => unreachable!(),
+        TypeSpecifier::Infer | TypeSpecifier::Unknown => unreachable!(),
     }
 }

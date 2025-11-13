@@ -2,8 +2,8 @@
 //! are the simplest forms of expressions that cannot be broken down further, and therefore
 //! serve as the building blocks for more complex expressions.
 use chumsky::{input::ValueInput, prelude::*};
-use lang::ty::{BuiltinType, Type};
-use span::{Span, Spanned};
+use lang::ty::TypeSpecifier;
+use span::Span;
 
 use super::ParserError;
 
@@ -18,7 +18,7 @@ where
     select! {
         lexer::Token::Number(val) = e =>
             ast::Literal {
-                ty: Type::Builtin(BuiltinType::Int),
+                ty: TypeSpecifier::INT,
                 value: val,
                 span: e.span(),
             },
@@ -50,13 +50,13 @@ where
         lexer::Token::Keyword("true") = e =>
             ast::Expr {
                 kind: ast::ExprKind::Bool(true),
-                ty: Type::Builtin(BuiltinType::Bool),
+                ty: TypeSpecifier::BOOL,
                 span: e.span(),
             },
         lexer::Token::Keyword("false") = e =>
             ast::Expr {
                 kind: ast::ExprKind::Bool(false),
-                ty: Type::Builtin(BuiltinType::Bool),
+                ty: TypeSpecifier::BOOL,
                 span: e.span(),
             },
     }
@@ -66,15 +66,27 @@ where
 /// by the language, such as `bool`, `int`, `str`, and `void`.
 #[must_use]
 pub fn builtin_type_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Spanned<lang::ty::Type>, ParserError<'tokens, 'src>> + Clone
+-> impl Parser<'tokens, I, ast::Type, ParserError<'tokens, 'src>> + Clone
 where
     I: ValueInput<'tokens, Token = lexer::Token<'src>, Span = Span>,
 {
     select! {
-        lexer::Token::Identifier("bool") = e => Spanned::new(Type::Builtin(BuiltinType::Bool), e.span()),
-        lexer::Token::Identifier("int") = e => Spanned::new(Type::Builtin(BuiltinType::Int), e.span()),
-        lexer::Token::Identifier("str") = e => Spanned::new(Type::Builtin(BuiltinType::Str), e.span()),
-        lexer::Token::Identifier("void") = e => Spanned::new(Type::Builtin(BuiltinType::Void), e.span()),
+        lexer::Token::Identifier("bool") = e => ast::Type {
+            specifier: TypeSpecifier::BOOL,
+            span: e.span()
+        },
+        lexer::Token::Identifier("int") = e => ast::Type {
+            specifier: TypeSpecifier::INT,
+            span: e.span()
+        },
+        lexer::Token::Identifier("str") = e => ast::Type {
+            specifier: TypeSpecifier::STR,
+            span: e.span()
+        },
+        lexer::Token::Identifier("void") = e => ast::Type {
+            specifier: TypeSpecifier::VOID,
+            span: e.span()
+        },
     }
 }
 
